@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BeamtimeHero</title>
+    <link rel="stylesheet" href="static/css/style.css">
+</head>
+<body>
+    <div class="header">
+        <img src="static/images/ssrl-logo.png" alt="SSRL">
+        <h1>BeamtimeHero</h1>
+        <span class="subtitle">Beamline Experiment Assistant</span>
+    </div>
+
+    <div class="main">
+        <div class="chat-container">
+            <div class="chat-header">
+                <span>
+                    <span id="status-dot" class="status-dot disconnected"></span>
+                    Chat
+                </span>
+                <span style="font-weight: 400; font-size: 0.8rem;">
+                    Staff can respond via Slack
+                </span>
+            </div>
+
+            <div class="messages" id="messages">
+                <!-- Messages inserted here -->
+            </div>
+
+            <div id="typing-indicator" class="typing-indicator">
+                <span></span><span></span><span></span>
+            </div>
+
+            <div class="input-area">
+                <textarea
+                    id="chat-input"
+                    placeholder="Ask about your experiment..."
+                    rows="1"
+                ></textarea>
+                <button id="btn-send" class="btn-send">Send</button>
+                <button id="btn-reset" class="btn-reset">Reset</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="static/js/marked.min.js"></script>
+    <script src="static/js/app.js"></script>
+</body>
+</html>

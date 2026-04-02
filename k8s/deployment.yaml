@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beamtimehero
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: beamtimehero
+  template:
+    metadata:
+      labels:
+        app: beamtimehero
+    spec:
+      imagePullSecrets:
+        - name: ghcr-creds
+      containers:
+        - name: beamtimehero
+          image: ghcr.io/deanslac/beamtimehero:0.0.1 # {"$imagepolicy": "flux-system:beamtimehero"}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          env:
+            - name: BASE_PATH
+              value: "/beamtimehero"
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: beamtimehero-secrets
+                  key: API_KEY
+            - name: SLACK_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: beamtimehero-secrets
+                  key: SLACK_BOT_TOKEN
+            - name: SLACK_APP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: beamtimehero-secrets
+                  key: SLACK_APP_TOKEN
+            - name: SLACK_CHANNEL_ID
+              valueFrom:
+                secretKeyRef:
+                  name: beamtimehero-secrets
+                  key: SLACK_CHANNEL_ID
+            # Database connection (same Postgres as bl15-2 playground)
+            - name: DB_HOST
+              value: "isaac-pgbouncer.isaac-psql.svc.cluster.local"
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: "bl152"
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: bl152-db-app
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: bl152-db-app
+                  key: password
+            # Tools mode: "mcp" or "cli"
+            - name: TOOLS_MODE
+              value: "mcp"
+          volumeMounts:
+            - name: beamline-data
+              mountPath: /sdf/group/ssrl
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /beamtimehero/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /beamtimehero/health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "768Mi"
+              cpu: "200m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+      volumes:
+        - name: beamline-data
+          persistentVolumeClaim:
+            claimName: sdf-group-ssrl-pvc
