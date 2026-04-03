@@ -12,12 +12,6 @@ PROJECT_ROOT = Path(__file__).parent.parent
 CONTEXT_DIR = PROJECT_ROOT / "context"
 STATIC_DIR = PROJECT_ROOT / "static"
 
-# Playground root — needed for blmcp / bldata_analysis imports
-PLAYGROUND_ROOT = os.getenv(
-    "PLAYGROUND_ROOT",
-    str(PROJECT_ROOT.parent / "playground"),
-)
-
 # Stanford AI API Gateway
 API_BASE_URL = "https://aiapi-prod.stanford.edu/v1"
 API_KEY = os.getenv("API_KEY", "")
@@ -32,4 +26,4 @@ SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", "")
 BASE_PATH = os.getenv("BASE_PATH", "/beamtimehero")
 
 # Tools mode: "mcp" (full tool schemas) or "cli" (progressive discovery)
-TOOLS_MODE = os.getenv("TOOLS_MODE", "mcp")
+TOOLS_MODE = os.getenv("TOOLS_MODE", "cli")

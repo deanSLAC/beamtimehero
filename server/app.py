@@ -19,10 +19,10 @@ from fastapi.staticfiles import StaticFiles
 # Add server/ to path for sibling imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config import BASE_PATH, STATIC_DIR, API_KEY, PLAYGROUND_ROOT
+from config import BASE_PATH, STATIC_DIR, API_KEY
 
-# Add playground root so blmcp / bldata_analysis / db_connection are importable
-sys.path.insert(0, PLAYGROUND_ROOT)
+# Add beamline_lib so blmcp / bldata_analysis / db_connection are importable
+sys.path.insert(0, str(Path(__file__).parent.parent / "beamline_lib"))
 from api_client import StanfordAPIClient
 from conversation import ConversationService
 from slack_bridge import SlackBridge
