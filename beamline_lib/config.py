@@ -17,14 +17,22 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Data directories
-BL_SCAN_DIR = Path(os.getenv("BL_SCAN_DIR", "/sdf/group/ssrl/isaac/data/data"))
-BL_LOGS_DIR = Path(os.getenv("BL_LOGS_DIR", "/sdf/group/ssrl/isaac/data/logs"))
-
-# Local development fallbacks
-if not BL_SCAN_DIR.exists():
-    BL_SCAN_DIR = Path(__file__).parent / "sample_data"
+BL_LOGS_DIR = Path(os.getenv("BL_LOGS_DIR", "/usr/local/lib/spec.log/logfiles"))
 if not BL_LOGS_DIR.exists():
     BL_LOGS_DIR = Path(__file__).parent / "sample_data"
+
+
+def _resolve_scan_dir(root: Path) -> Path:
+    """Pick the most recently modified subdirectory, or fall back to sample_data."""
+    if root.is_dir():
+        subdirs = [d for d in root.iterdir() if d.is_dir()]
+        if subdirs:
+            return max(subdirs, key=lambda d: d.stat().st_mtime)
+    return Path(__file__).parent / "sample_data"
+
+
+_DATA_ROOT = Path(os.getenv("BL_SCAN_DIR", "/data/fifteen"))
+BL_SCAN_DIR = _resolve_scan_dir(_DATA_ROOT)
 
 # File patterns
 LOG_FILE_PATTERN = "log__*"
