@@ -88,6 +88,49 @@ def execute_tool(name: str, arguments: dict) -> tuple[str, list[str]]:
                 images_b64,
             )
 
+        elif name == "normalize_scan":
+            result = bl_tools.edge_step_normalize_scan(
+                arguments.get("file_name", ""),
+                arguments.get("scan_number", 1),
+                counter=arguments.get("counter"),
+                normalize_by=arguments.get("normalize_by", "I0"),
+            )
+            return (
+                json.dumps(result, indent=2) if result else "Scan not found.",
+                images_b64,
+            )
+
+        elif name == "average_scans":
+            file_name = arguments.get("file_name")
+            if file_name:
+                result = bl_tools.average_energy_scans(file_name=file_name)
+            else:
+                result = bl_tools.average_latest_energy_scans()
+            return json.dumps(result, indent=2), images_b64
+
+        elif name == "analyze_convergence":
+            result = bl_tools.analyze_scan_convergence(
+                file_name=arguments.get("file_name"),
+            )
+            return json.dumps(result, indent=2, default=str), images_b64
+
+        elif name == "analyze_efficiency":
+            result = bl_tools.analyze_scan_efficiency(
+                file_name=arguments.get("file_name"),
+            )
+            return json.dumps(result, indent=2, default=str), images_b64
+
+        elif name == "plot_averaged_scans":
+            file_names = arguments.get("file_names", [])
+            if not file_names:
+                return "Error: file_names array must not be empty.", images_b64
+            fig, summary = bl_tools.plot_averaged_scans_overlay(file_names)
+            if fig:
+                images_b64.append(fig_to_base64(fig))
+                import matplotlib.pyplot as plt
+                plt.close(fig)
+            return summary, images_b64
+
         elif name == "plot_scan":
             fig, summary = bl_tools.plot_scan(
                 arguments.get("file_name", ""),

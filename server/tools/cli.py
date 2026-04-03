@@ -78,12 +78,30 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--file-name", required=True, help="The SPEC source file name")
     p.add_argument("--scan-number", type=int, required=True, help="The scan number within the file")
 
+    p = sub.add_parser("normalize-scan", help="Edge-step normalize a scan (divide by I0, then scale pre/post edge)")
+    p.add_argument("--file-name", required=True, help="The SPEC source file name")
+    p.add_argument("--scan-number", type=int, required=True, help="The scan number within the file")
+    p.add_argument("--counter", help="Counter to normalize. Auto-detected if omitted.")
+    p.add_argument("--normalize-by", default="I0", help="Counter to divide by before edge-step (default: I0)")
+
+    p = sub.add_parser("average-scans", help="Average all energy scans in a SPEC file after edge-step normalization")
+    p.add_argument("--file-name", help="SPEC file name. If omitted, uses the most recent file with >1 energy scan.")
+
+    p = sub.add_parser("analyze-convergence", help="Check if repeated scans have converged (cosine similarity metrics)")
+    p.add_argument("--file-name", help="SPEC file name. If omitted, uses the most recent file.")
+
+    p = sub.add_parser("analyze-efficiency", help="Full scan repetition efficiency report: convergence, CV, optimal count, verdict")
+    p.add_argument("--file-name", help="SPEC file name. If omitted, uses the most recent file.")
+
     # --- Plot commands ---
     p = sub.add_parser("plot-scan", help="Generate a plot of scan data")
     p.add_argument("--file-name", required=True, help="The SPEC source file name")
     p.add_argument("--scan-number", type=int, required=True, help="The scan number within the file")
     p.add_argument("--counter", help="Counter to plot (e.g. I0, vortDT). Auto-detected if omitted.")
     p.add_argument("--normalize-by", help="Counter to normalize by (e.g. I0)")
+
+    p = sub.add_parser("plot-averaged-scans", help="Plot averaged energy scans for multiple samples overlaid")
+    p.add_argument("--file-names", required=True, help="JSON array of SPEC file names to compare")
 
     p = sub.add_parser("plot-data", help="General-purpose line chart from data arrays")
     p.add_argument("--x", required=True, help="JSON array of X values")
@@ -202,6 +220,20 @@ def run_cli(command_str: str) -> tuple[str, list[str]]:
     elif tool_name == "get_scan_deadtime":
         tool_args["file_name"] = args.file_name
         tool_args["scan_number"] = args.scan_number
+    elif tool_name == "normalize_scan":
+        tool_args["file_name"] = args.file_name
+        tool_args["scan_number"] = args.scan_number
+        if args.counter:
+            tool_args["counter"] = args.counter
+        tool_args["normalize_by"] = args.normalize_by
+    elif tool_name == "average_scans":
+        if args.file_name:
+            tool_args["file_name"] = args.file_name
+    elif tool_name in ("analyze_convergence", "analyze_efficiency"):
+        if args.file_name:
+            tool_args["file_name"] = args.file_name
+    elif tool_name == "plot_averaged_scans":
+        tool_args["file_names"] = json.loads(args.file_names)
     elif tool_name == "plot_scan":
         tool_args["file_name"] = args.file_name
         tool_args["scan_number"] = args.scan_number

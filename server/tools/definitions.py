@@ -134,6 +134,81 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
+            "name": "normalize_scan",
+            "description": "Edge-step normalize a scan: divide signal by I0, then scale so pre-edge is 0 and post-edge is 1. Returns the normalized data array.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_name": {"type": "string", "description": "The SPEC source file name"},
+                    "scan_number": {"type": "integer", "description": "The scan number within the file"},
+                    "counter": {
+                        "type": "string",
+                        "description": "Counter to normalize. Auto-detected if omitted.",
+                    },
+                    "normalize_by": {
+                        "type": "string",
+                        "description": "Counter to divide by before edge-step normalization (default: I0)",
+                        "default": "I0",
+                    },
+                },
+                "required": ["file_name", "scan_number"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "average_scans",
+            "description": "Average all energy scans in a SPEC file after edge-step normalization. Returns mean and standard deviation across scans. If file_name is omitted, uses the most recent file with >1 energy scan.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_name": {
+                        "type": "string",
+                        "description": "SPEC file name. If omitted, uses the most recent file with >1 energy scan.",
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_convergence",
+            "description": "Check if repeated scans have converged using cosine similarity metrics. Reports per-scan similarity to the mean, cumulative convergence, and standard error. Use this when the user asks 'do I have enough scans?'",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_name": {
+                        "type": "string",
+                        "description": "SPEC file name. If omitted, uses the most recent file.",
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_efficiency",
+            "description": "Comprehensive scan repetition efficiency report. Includes convergence, CV analysis, Poisson limit comparison, optimal scan count recommendation, and a verdict (needs_more / reasonable / marginal / wasteful).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_name": {
+                        "type": "string",
+                        "description": "SPEC file name. If omitted, uses the most recent file.",
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "plot_scan",
             "description": "Generate and display a plot of scan data. Use this by default when the user wants to see a plot. The plot is shown directly to the user. Use list_scans to find available file_name and scan_number.",
             "parameters": {
@@ -151,6 +226,24 @@ TOOL_DEFINITIONS = [
                     },
                 },
                 "required": ["file_name", "scan_number"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "plot_averaged_scans",
+            "description": "Plot averaged energy scans for multiple samples overlaid on one plot. Each sample is edge-step normalized and averaged, then plotted with standard deviation shading.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of SPEC file names (one per sample) to compare.",
+                    }
+                },
+                "required": ["file_names"],
             },
         },
     },

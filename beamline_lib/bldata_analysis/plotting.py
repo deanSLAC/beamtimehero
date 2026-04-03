@@ -1,4 +1,4 @@
-"""Plotting functions for processed scan data."""
+"""Plotting functions for scan data."""
 
 import io
 import base64
@@ -14,12 +14,12 @@ from . import scans
 
 
 def plot_scan(file_name, scan_number, counter=None, normalize_by=None):
-    """Plot a processed scan and return the figure + text summary.
+    """Plot a scan and return the figure + text summary.
 
     If counter is not specified, auto-detects the active counter.
 
     Returns:
-        (fig, summary) — matplotlib Figure and a text description of the plot.
+        (fig, summary) -- matplotlib Figure and a text description of the plot.
         Returns (None, error_message) if the scan can't be loaded.
     """
     df = scans.read_processed_scan(file_name, scan_number)
@@ -86,133 +86,6 @@ def plot_scan(file_name, scan_number, counter=None, normalize_by=None):
     return fig, summary
 
 
-def plot_counter_timeseries(counter_name, hours=24, exclude_files=None):
-    """Plot a counter as a time series across all scans in a time window.
-
-    Uses build_counter_timeseries to gather per-point data from SPEC files,
-    then plots value vs scan index, color-coded by file_name.
-
-    Args:
-        counter_name: Counter to plot (e.g. "I0", "SPEAR"). Case-insensitive.
-        hours: Number of hours to look back (default 24).
-        exclude_files: Optional list of file names to exclude.
-
-    Returns:
-        (fig, summary) — matplotlib Figure and text summary.
-        Returns (None, error_message) if no data found.
-    """
-    from datetime import timedelta
-    from config import now_pacific
-
-    end_time = now_pacific()
-    start_time = end_time - timedelta(hours=hours)
-
-    ts = scans.build_counter_timeseries(start_time, end_time, counter_name, exclude_files=exclude_files)
-
-    if not ts:
-        return None, f"No '{counter_name}' data found in the past {hours} hours."
-
-    # Group points by file_name for color coding
-    file_groups = {}
-    for p in ts:
-        fn = p["file_name"]
-        if fn not in file_groups:
-            file_groups[fn] = []
-        file_groups[fn].append(p)
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-
-    # Plot each file as a separate series with sequential x-index
-    idx = 0
-    tick_positions = []
-    tick_labels = []
-    for fn, points in file_groups.items():
-        x = list(range(idx, idx + len(points)))
-        y = [p["value"] for p in points]
-        ax.plot(x, y, '.', markersize=3, label=fn, alpha=0.7)
-        # Mark file boundary with a tick at the midpoint
-        mid = idx + len(points) // 2
-        tick_positions.append(mid)
-        tick_labels.append(fn)
-        idx += len(points)
-
-    ax.set_ylabel(counter_name)
-    ax.set_xlabel("File / Scan sequence")
-    ax.set_title(f"{counter_name} over past {hours}h ({start_time.strftime('%m/%d %H:%M')} – {end_time.strftime('%m/%d %H:%M')})", fontsize=10)
-
-    # Show file names as x-ticks if not too many
-    if len(tick_positions) <= 15:
-        ax.set_xticks(tick_positions)
-        ax.set_xticklabels(tick_labels, rotation=45, ha="right", fontsize=7)
-    else:
-        ax.legend(fontsize=6, ncol=2, loc="upper left")
-
-    fig.tight_layout()
-
-    # Summary
-    all_values = [p["value"] for p in ts]
-    import numpy as np
-    vals = np.array(all_values)
-    parts = [
-        f"Time series of {counter_name} over the past {hours} hours",
-        f"{len(ts)} data points across {len(file_groups)} file(s)",
-        f"Mean: {vals.mean():.2f}, Std: {vals.std():.2f}",
-        f"Range: {vals.min():.2f} to {vals.max():.2f}",
-    ]
-    summary = ". ".join(parts) + "."
-    return fig, summary
-
-
-def plot_activity(hours=24):
-    """Plot beamline activity as a binary timeline at 10-minute resolution.
-
-    Green shading = active (scan running), white = inactive.
-
-    Returns:
-        (fig, summary) or (None, error_message).
-    """
-    from datetime import datetime
-
-    data = scans.get_activity_data(hours=hours)
-    if not data or not data["bins"]:
-        return None, f"No scan data found in the past {hours} hours."
-
-    bins = data["bins"]
-    times = [datetime.fromisoformat(b["start"]) for b in bins]
-    values = [b["active"] for b in bins]
-
-    fig, ax = plt.subplots(figsize=(12, 2.5))
-
-    import matplotlib.dates as mdates
-
-    ax.fill_between(times, values, step="post", alpha=0.6, color="#2ecc71")
-    ax.step(times, values, where="post", color="#27ae60", linewidth=0.8)
-
-    ax.set_ylim(-0.1, 1.4)
-    ax.set_yticks([0, 1])
-    ax.set_yticklabels(["Inactive", "Active"])
-    ax.set_xlabel("Time")
-    ax.set_title(
-        f"Beamline Activity — past {hours}h "
-        f"({data['active_pct']}% active, {data['total_scans']} scans)",
-        fontsize=10,
-    )
-
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%m/%d %H:%M"))
-    fig.autofmt_xdate(rotation=30, ha="right")
-    ax.grid(axis="x", alpha=0.3)
-
-    fig.tight_layout()
-
-    summary = (
-        f"Beamline activity over the past {hours} hours. "
-        f"{data['active_bins']} of {data['total_bins']} bins active ({data['active_pct']}%). "
-        f"{data['total_scans']} total scans. "
-        f"Window: {data['window_start']} to {data['window_end']}."
-    )
-    return fig, summary
-
-
 def plot_averaged_scans_overlay(file_names):
     """Plot edge-step-normalized averaged energy scans for multiple samples.
 
@@ -235,8 +108,6 @@ def plot_averaged_scans_overlay(file_names):
 
     fig, ax = plt.subplots(figsize=(10, 6))
     plotted = []
-
-    import pandas as pd
 
     for fn in sample_names:
         result = scans.average_energy_scans(file_name=fn)
@@ -270,7 +141,7 @@ def plot_averaged_scans_overlay(file_names):
 
     ax.set_xlabel("Energy (eV)")
     ax.set_ylabel("Normalized absorption")
-    ax.set_title("Averaged Energy Scans — Past 24h Samples", fontsize=11)
+    ax.set_title("Averaged Energy Scans", fontsize=11)
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
     fig.tight_layout()
