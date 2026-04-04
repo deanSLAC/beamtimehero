@@ -20,7 +20,8 @@ STANFORD_MODEL = os.getenv("STANFORD_MODEL", "claude-4-5-sonnet")
 # Slack
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
 SLACK_APP_TOKEN = os.getenv("SLACK_APP_TOKEN", "")
-SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", "")
+SLACK_LLM_CHANNEL_ID = os.getenv("SLACK_LLM_CHANNEL_ID", "")
+SLACK_USERS_CHANNEL_ID = os.getenv("SLACK_USERS_CHANNEL_ID", "")
 
 # App
 BASE_PATH = os.getenv("BASE_PATH", "/beamtimehero")

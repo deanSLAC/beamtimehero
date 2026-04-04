@@ -1,5 +1,7 @@
 /**
  * BeamtimeHero — Chat client
+ *
+ * Two-pane layout: LLM chat (left) + Staff chat (right)
  */
 (function () {
     "use strict";
@@ -7,6 +9,7 @@
     // Resolve base path from the page URL (strip trailing slash)
     const BASE = window.location.pathname.replace(/\/+$/, "") || "";
 
+    // LLM chat elements
     const messagesEl = document.getElementById("messages");
     const inputEl = document.getElementById("chat-input");
     const sendBtn = document.getElementById("btn-send");
@@ -14,8 +17,14 @@
     const typingEl = document.getElementById("typing-indicator");
     const statusDot = document.getElementById("status-dot");
 
+    // Staff chat elements
+    const staffMessagesEl = document.getElementById("staff-messages");
+    const staffInputEl = document.getElementById("staff-input");
+    const staffSendBtn = document.getElementById("btn-staff-send");
+
     let ws = null;
     let sending = false;
+    let staffSending = false;
 
     // --- WebSocket ---
     function connectWS() {
@@ -31,9 +40,14 @@
 
         ws.onmessage = function (event) {
             const data = JSON.parse(event.data);
-            if (data.type === "staff") {
-                addMessage("staff", data.text, data.name);
+            if (data.type === "staff_message") {
+                // Staff reply → staff pane
+                addStaffMessage("staff", data.text, data.name);
+            } else if (data.type === "user_to_staff") {
+                // Echo of our message to staff → staff pane
+                addStaffMessage("user", data.text);
             } else if (data.type === "assistant") {
+                // LLM response triggered by staff !LLM → LLM pane
                 addMessage("assistant", data.text, null, data.images);
             }
         };
@@ -56,7 +70,7 @@
         }, 30000);
     }
 
-    // --- Messages ---
+    // --- LLM Chat Messages ---
     function addMessage(role, text, label, images) {
         const div = document.createElement("div");
         div.className = "message " + role;
@@ -112,7 +126,35 @@
         }
     }
 
-    // --- API ---
+    // --- Staff Chat Messages ---
+    function addStaffMessage(role, text, label) {
+        const div = document.createElement("div");
+        div.className = "message " + (role === "staff" ? "staff" : "user");
+
+        if (label) {
+            const labelEl = document.createElement("div");
+            labelEl.className = "label";
+            labelEl.textContent = label;
+            div.appendChild(labelEl);
+        }
+
+        const content = document.createElement("div");
+        content.textContent = text;
+        div.appendChild(content);
+
+        staffMessagesEl.appendChild(div);
+        staffMessagesEl.scrollTop = staffMessagesEl.scrollHeight;
+    }
+
+    function addStaffSystemMessage(text) {
+        const div = document.createElement("div");
+        div.className = "message system";
+        div.textContent = text;
+        staffMessagesEl.appendChild(div);
+        staffMessagesEl.scrollTop = staffMessagesEl.scrollHeight;
+    }
+
+    // --- LLM API ---
     async function sendMessage() {
         const text = inputEl.value.trim();
         if (!text || sending) return;
@@ -149,11 +191,43 @@
         }
     }
 
+    // --- Staff Message API ---
+    async function sendStaffMessage() {
+        const text = staffInputEl.value.trim();
+        if (!text || staffSending) return;
+
+        staffSending = true;
+        staffSendBtn.disabled = true;
+        staffInputEl.value = "";
+        staffInputEl.style.height = "auto";
+
+        try {
+            const response = await fetch(`${BASE}/api/staff-message`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message: text }),
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                addStaffSystemMessage("Error: " + (data.error || "Failed to send"));
+            }
+        } catch (err) {
+            addStaffSystemMessage("Connection error: " + err.message);
+        } finally {
+            staffSending = false;
+            staffSendBtn.disabled = false;
+            staffInputEl.focus();
+        }
+    }
+
     async function resetConversation() {
         try {
             await fetch(`${BASE}/api/reset`, { method: "POST" });
             messagesEl.innerHTML = "";
+            staffMessagesEl.innerHTML = "";
             addSystemMessage("Conversation reset. Ask a new question!");
+            addStaffSystemMessage("Staff chat reset.");
         } catch (err) {
             addSystemMessage("Failed to reset: " + err.message);
         }
@@ -161,8 +235,8 @@
 
     // --- Events ---
     sendBtn.addEventListener("click", sendMessage);
-
     resetBtn.addEventListener("click", resetConversation);
+    staffSendBtn.addEventListener("click", sendStaffMessage);
 
     inputEl.addEventListener("keydown", function (e) {
         if (e.key === "Enter" && !e.shiftKey) {
@@ -171,13 +245,23 @@
         }
     });
 
-    // Auto-resize textarea
-    inputEl.addEventListener("input", function () {
+    staffInputEl.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendStaffMessage();
+        }
+    });
+
+    // Auto-resize textareas
+    function autoResize() {
         this.style.height = "auto";
         this.style.height = Math.min(this.scrollHeight, 120) + "px";
-    });
+    }
+    inputEl.addEventListener("input", autoResize);
+    staffInputEl.addEventListener("input", autoResize);
 
     // --- Init ---
     connectWS();
     addSystemMessage("Welcome to BeamtimeHero! Ask questions about your beamline experiment.");
+    addStaffSystemMessage("Send a message to beamline staff via Slack.");
 })();

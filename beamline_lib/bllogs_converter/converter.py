@@ -24,7 +24,7 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-from config import BL_LOGS_DIR, LOG_FILE_PATTERN
+from bl_config import BL_LOGS_DIR, LOG_FILE_PATTERN
 from .db import (
     ensure_tables, get_file_progress, update_file_progress,
     reset_file_progress, insert_commands, insert_errors,

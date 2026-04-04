@@ -64,11 +64,26 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    max-width: 900px;
     width: 100%;
     margin: 0 auto;
     padding: 16px;
     overflow: hidden;
+}
+
+.panes {
+    flex: 1;
+    display: flex;
+    gap: 16px;
+    overflow: hidden;
+}
+
+.panes > .chat-container {
+    flex: 1;
+    min-width: 0;
+}
+
+.panes > .staff-pane {
+    flex: 0 0 340px;
 }
 
 /* Chat area */
@@ -258,12 +273,29 @@ body {
 .btn-reset {
     background-color: #6c757d;
     color: var(--text-light);
-    font-size: 0.8rem;
-    padding: 10px 14px;
+    font-size: 0.75rem;
+    padding: 6px 12px;
 }
 
 .btn-reset:hover {
     background-color: #5a6268;
+}
+
+.btn-staff {
+    background-color: #28a745;
+}
+
+.btn-staff:hover {
+    background-color: #218838;
+}
+
+/* Staff pane accent */
+.staff-pane {
+    border-left: 3px solid #28a745;
+}
+
+.staff-pane .chat-header {
+    color: #1b7a1b;
 }
 
 /* Plot images */
@@ -339,6 +371,16 @@ body {
 }
 
 /* Responsive */
+@media (max-width: 900px) {
+    .panes {
+        flex-direction: column;
+    }
+
+    .panes > .staff-pane {
+        flex: 0 0 250px;
+    }
+}
+
 @media (max-width: 640px) {
     .main {
         padding: 8px;

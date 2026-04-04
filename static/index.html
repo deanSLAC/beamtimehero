@@ -14,33 +14,54 @@
     </div>
 
     <div class="main">
-        <div class="chat-container">
-            <div class="chat-header">
-                <span>
-                    <span id="status-dot" class="status-dot disconnected"></span>
-                    Chat
-                </span>
-                <span style="font-weight: 400; font-size: 0.8rem;">
-                    Staff can respond via Slack
-                </span>
+        <div class="panes">
+            <!-- LLM Chat pane -->
+            <div class="chat-container">
+                <div class="chat-header">
+                    <span>
+                        <span id="status-dot" class="status-dot disconnected"></span>
+                        AI Assistant
+                    </span>
+                    <button id="btn-reset" class="btn-reset">Reset</button>
+                </div>
+
+                <div class="messages" id="messages">
+                    <!-- Messages inserted here -->
+                </div>
+
+                <div id="typing-indicator" class="typing-indicator">
+                    <span></span><span></span><span></span>
+                </div>
+
+                <div class="input-area">
+                    <textarea
+                        id="chat-input"
+                        placeholder="Ask about your experiment..."
+                        rows="1"
+                    ></textarea>
+                    <button id="btn-send" class="btn-send">Send</button>
+                </div>
             </div>
 
-            <div class="messages" id="messages">
-                <!-- Messages inserted here -->
-            </div>
+            <!-- Staff Chat pane -->
+            <div class="chat-container staff-pane">
+                <div class="chat-header">
+                    <span>Staff Chat</span>
+                    <span style="font-weight: 400; font-size: 0.8rem;">via Slack</span>
+                </div>
 
-            <div id="typing-indicator" class="typing-indicator">
-                <span></span><span></span><span></span>
-            </div>
+                <div class="messages" id="staff-messages">
+                    <!-- Staff messages inserted here -->
+                </div>
 
-            <div class="input-area">
-                <textarea
-                    id="chat-input"
-                    placeholder="Ask about your experiment..."
-                    rows="1"
-                ></textarea>
-                <button id="btn-send" class="btn-send">Send</button>
-                <button id="btn-reset" class="btn-reset">Reset</button>
+                <div class="input-area">
+                    <textarea
+                        id="staff-input"
+                        placeholder="Message beamline staff..."
+                        rows="1"
+                    ></textarea>
+                    <button id="btn-staff-send" class="btn-send btn-staff">Send</button>
+                </div>
             </div>
         </div>
     </div>

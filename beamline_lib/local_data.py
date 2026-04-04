@@ -17,7 +17,7 @@ from silx.io.specfile import SpecFile, is_specfile
 
 logger = logging.getLogger(__name__)
 
-from config import BL_SCAN_DIR
+from bl_config import BL_SCAN_DIR
 
 # Cache file for scan metadata (lives next to SPEC files)
 _CACHE_FILE = BL_SCAN_DIR / ".scan_metadata_cache.json" if BL_SCAN_DIR else None

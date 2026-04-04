@@ -64,7 +64,7 @@ def _broadcast(msg: dict):
 
 
 def on_staff_message(text: str, staff_name: str):
-    """Called by SlackBridge when staff sends a message in Slack."""
+    """Called by SlackBridge when staff sends a message in the users channel."""
     # Check for !LLM flag
     route_to_llm = "!LLM" in text
 
@@ -73,8 +73,8 @@ def on_staff_message(text: str, staff_name: str):
     else:
         display_text = text
 
-    # Always show staff message in the chat window
-    _broadcast({"type": "staff", "name": staff_name, "text": display_text})
+    # Show staff message in the staff chat pane
+    _broadcast({"type": "staff_message", "name": staff_name, "text": display_text})
 
     if conversation:
         if route_to_llm:
@@ -85,7 +85,7 @@ def on_staff_message(text: str, staff_name: str):
                 "text": result.text,
                 "images": result.images,
             })
-            # Also post LLM response back to Slack
+            # Also post LLM response back to Slack LLM channel
             slack_bridge.post_llm_response(result.text)
         else:
             # Buffer for context on the user's next message
@@ -181,6 +181,22 @@ async def reset():
 
     slack_bridge.reset_thread()
     return {"status": "reset"}
+
+
+@app.post(f"{BASE_PATH}/api/staff-message")
+async def staff_message(payload: dict):
+    """Send a user message directly to beamline staff via Slack."""
+    user_text = payload.get("message", "").strip()
+    if not user_text:
+        return JSONResponse({"error": "Empty message"}, status_code=400)
+
+    # Post to the users Slack channel
+    slack_bridge.post_user_to_staff(user_text)
+
+    # Echo back to all WebSocket clients so the sender sees it in the staff pane
+    await broadcast_ws({"type": "user_to_staff", "text": user_text})
+
+    return {"status": "sent"}
 
 
 @app.websocket(f"{BASE_PATH}/ws")

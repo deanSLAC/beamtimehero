@@ -120,7 +120,8 @@ The app serves at `http://localhost:8080/beamtimehero`.
 | `BL_LOGS_DIR` | No | Path to SPEC log files |
 | `SLACK_BOT_TOKEN` | No | Slack bot token (`xoxb-...`) |
 | `SLACK_APP_TOKEN` | No | Slack app-level token (`xapp-...`, for Socket Mode) |
-| `SLACK_CHANNEL_ID` | No | Slack channel to post conversations to |
+| `SLACK_LLM_CHANNEL_ID` | No | Slack channel for user-LLM conversation log |
+| `SLACK_USERS_CHANNEL_ID` | No | Slack channel for staff-user communication |
 | `BASE_PATH` | No | URL base path (default: `/beamtimehero`) |
 | `TOOLS_MODE` | No | `cli` (default) or `mcp` |
 

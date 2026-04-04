@@ -1,7 +1,8 @@
 """Slack bridge for BeamtimeHero.
 
-Forwards user messages and LLM responses to a Slack channel.
-Listens for staff replies and pushes them back to connected WebSocket clients.
+Two-channel architecture:
+- LLM channel: mirrors user questions and LLM responses (read-only for staff)
+- Users channel: bidirectional staff-user communication
 """
 from __future__ import annotations
 
@@ -13,7 +14,12 @@ from typing import Callable
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
-from config import SLACK_BOT_TOKEN, SLACK_APP_TOKEN, SLACK_CHANNEL_ID
+from config import (
+    SLACK_BOT_TOKEN,
+    SLACK_APP_TOKEN,
+    SLACK_LLM_CHANNEL_ID,
+    SLACK_USERS_CHANNEL_ID,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +28,8 @@ class SlackBridge:
     """Bidirectional bridge between BeamtimeHero web app and Slack."""
 
     def __init__(self):
-        self._thread_ts: str | None = None  # active Slack thread
+        self._llm_thread_ts: str | None = None
+        self._staff_thread_ts: str | None = None
         self._on_staff_message: Callable[[str, str], None] | None = None
         self._app: App | None = None
         self._handler: SocketModeHandler | None = None
@@ -55,7 +62,11 @@ class SlackBridge:
 
         thread = threading.Thread(target=self._handler.start, daemon=True)
         thread.start()
-        logger.info("Slack bridge started (channel: %s)", SLACK_CHANNEL_ID)
+        logger.info(
+            "Slack bridge started (LLM channel: %s, Staff channel: %s)",
+            SLACK_LLM_CHANNEL_ID,
+            SLACK_USERS_CHANNEL_ID,
+        )
 
     def _register_handlers(self):
         @self._app.event("message")
@@ -64,9 +75,15 @@ class SlackBridge:
             if event.get("bot_id") or event.get("subtype"):
                 return
 
-            # Only listen in our thread
+            channel = event.get("channel", "")
+
+            # Only relay messages from the users channel
+            if channel != SLACK_USERS_CHANNEL_ID:
+                return
+
+            # Only listen in our thread (if one exists)
             thread_ts = event.get("thread_ts")
-            if not thread_ts or thread_ts != self._thread_ts:
+            if self._staff_thread_ts and thread_ts != self._staff_thread_ts:
                 return
 
             text = event.get("text", "").strip()
@@ -93,47 +110,71 @@ class SlackBridge:
             if self._on_staff_message:
                 self._on_staff_message(text, staff_name)
 
+    # --- LLM channel (read-only mirror) ---
+
     def post_user_message(self, user_text: str):
-        """Forward a user question to the Slack channel."""
-        if not self._app or not SLACK_CHANNEL_ID:
+        """Forward a user question to the LLM Slack channel."""
+        if not self._app or not SLACK_LLM_CHANNEL_ID:
             return
 
         try:
-            if not self._thread_ts:
-                # Start a new thread
+            if not self._llm_thread_ts:
                 result = self._app.client.chat_postMessage(
-                    channel=SLACK_CHANNEL_ID,
+                    channel=SLACK_LLM_CHANNEL_ID,
                     text=f"*New BeamtimeHero question:*\n> {user_text}",
                 )
-                self._thread_ts = result["ts"]
+                self._llm_thread_ts = result["ts"]
             else:
                 self._app.client.chat_postMessage(
-                    channel=SLACK_CHANNEL_ID,
+                    channel=SLACK_LLM_CHANNEL_ID,
                     text=f"*User:*\n> {user_text}",
-                    thread_ts=self._thread_ts,
+                    thread_ts=self._llm_thread_ts,
                 )
         except Exception as e:
             logger.error("Failed to post user message to Slack: %s", e)
 
     def post_llm_response(self, llm_text: str):
-        """Forward an LLM response to the Slack thread."""
-        if not self._app or not SLACK_CHANNEL_ID or not self._thread_ts:
+        """Forward an LLM response to the LLM Slack thread."""
+        if not self._app or not SLACK_LLM_CHANNEL_ID or not self._llm_thread_ts:
             return
 
         try:
-            # Truncate very long responses for Slack
             display_text = llm_text
             if len(display_text) > 3000:
                 display_text = display_text[:3000] + "\n\n_(truncated)_"
 
             self._app.client.chat_postMessage(
-                channel=SLACK_CHANNEL_ID,
+                channel=SLACK_LLM_CHANNEL_ID,
                 text=f"*AI Assistant:*\n{display_text}",
-                thread_ts=self._thread_ts,
+                thread_ts=self._llm_thread_ts,
             )
         except Exception as e:
             logger.error("Failed to post LLM response to Slack: %s", e)
 
+    # --- Users channel (bidirectional staff-user chat) ---
+
+    def post_user_to_staff(self, user_text: str):
+        """Forward a user message to the users Slack channel."""
+        if not self._app or not SLACK_USERS_CHANNEL_ID:
+            return
+
+        try:
+            if not self._staff_thread_ts:
+                result = self._app.client.chat_postMessage(
+                    channel=SLACK_USERS_CHANNEL_ID,
+                    text=f"*Beamline user:*\n> {user_text}",
+                )
+                self._staff_thread_ts = result["ts"]
+            else:
+                self._app.client.chat_postMessage(
+                    channel=SLACK_USERS_CHANNEL_ID,
+                    text=f"*Beamline user:*\n> {user_text}",
+                    thread_ts=self._staff_thread_ts,
+                )
+        except Exception as e:
+            logger.error("Failed to post user message to users channel: %s", e)
+
     def reset_thread(self):
-        """Start a new Slack thread for the next conversation."""
-        self._thread_ts = None
+        """Start new Slack threads for the next conversation."""
+        self._llm_thread_ts = None
+        self._staff_thread_ts = None
