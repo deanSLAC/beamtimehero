@@ -14,6 +14,35 @@
     </div>
 
     <div class="main">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-intro">
+                <strong>BeamtimeHero</strong> is an AI assistant for SSRL BL15-2.
+                It can query your scan data, logs, and reference documents.
+                Beamline staff can read and collaborate with your AI conversation via Slack.
+            </div>
+
+            <div class="sidebar-section">
+                <button class="sidebar-toggle" id="tools-toggle">
+                    Available Tools
+                    <span class="toggle-arrow">&#9654;</span>
+                </button>
+                <ul class="sidebar-list collapsed" id="tools-list">
+                    <!-- Populated by JS -->
+                </ul>
+            </div>
+
+            <div class="sidebar-section">
+                <button class="sidebar-toggle" id="refs-toggle">
+                    Reference Documents
+                    <span class="toggle-arrow">&#9654;</span>
+                </button>
+                <ul class="sidebar-list collapsed" id="refs-list">
+                    <!-- Populated by JS -->
+                </ul>
+            </div>
+        </aside>
+
         <div class="panes">
             <!-- LLM Chat pane -->
             <div class="chat-container">

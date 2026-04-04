@@ -63,11 +63,106 @@ body {
 .main {
     flex: 1;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     width: 100%;
     margin: 0 auto;
     padding: 16px;
+    gap: 16px;
     overflow: hidden;
+}
+
+/* Sidebar */
+.sidebar {
+    flex: 0 0 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+}
+
+.sidebar-intro {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 14px;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--text-dark);
+    box-shadow: var(--shadow);
+}
+
+.sidebar-intro strong {
+    color: var(--ssrl-red);
+}
+
+.sidebar-section {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+
+.sidebar-toggle {
+    width: 100%;
+    padding: 10px 14px;
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background-color 0.15s;
+}
+
+.sidebar-toggle:hover {
+    background-color: var(--ssrl-beige);
+}
+
+.toggle-arrow {
+    font-size: 0.65rem;
+    transition: transform 0.2s;
+}
+
+.sidebar-toggle.open .toggle-arrow {
+    transform: rotate(90deg);
+}
+
+.sidebar-list {
+    list-style: none;
+    padding: 0 14px 10px;
+    margin: 0;
+}
+
+.sidebar-list.collapsed {
+    display: none;
+}
+
+.sidebar-list li {
+    padding: 4px 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-list li:last-child {
+    border-bottom: none;
+}
+
+.sidebar-list .tool-name {
+    font-weight: 600;
+    color: var(--text-dark);
+    display: block;
+}
+
+.sidebar-list .tool-desc {
+    display: block;
+    font-size: 0.7rem;
+    margin-top: 2px;
 }
 
 .panes {
@@ -75,6 +170,7 @@ body {
     display: flex;
     gap: 16px;
     overflow: hidden;
+    min-width: 0;
 }
 
 .panes > .chat-container {
@@ -371,7 +467,29 @@ body {
 }
 
 /* Responsive */
+@media (max-width: 1100px) {
+    .sidebar {
+        flex: 0 0 180px;
+    }
+}
+
 @media (max-width: 900px) {
+    .main {
+        flex-direction: column;
+    }
+
+    .sidebar {
+        flex: none;
+        flex-direction: row;
+        overflow-x: auto;
+        overflow-y: hidden;
+    }
+
+    .sidebar-intro,
+    .sidebar-section {
+        min-width: 200px;
+    }
+
     .panes {
         flex-direction: column;
     }

@@ -14,6 +14,11 @@ command, call `beamtimehero <command> --help`. Common workflows:
 - Search logs: `beamtimehero search-logs --query <text>`
 - Look up reference docs: `beamtimehero reference --list`
 
+IMPORTANT: Reference documents contain procedures, safety rules, and operational
+guides (e.g. cryostat procedures, SPEC commands, user operations). When the user
+asks about procedures, equipment operation, or safety, ALWAYS check the reference
+documents first with `beamtimehero reference --list`, then fetch the relevant doc.
+
 Start by discovering what's available, then use the appropriate commands to
 answer the user's question. Scan data is read directly from SPEC files on disk.
 

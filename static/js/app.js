@@ -1,7 +1,7 @@
 /**
  * BeamtimeHero — Chat client
  *
- * Two-pane layout: LLM chat (left) + Staff chat (right)
+ * Three-panel layout: Sidebar (left) + LLM chat (center) + Staff chat (right)
  */
 (function () {
     "use strict";
@@ -22,9 +22,55 @@
     const staffInputEl = document.getElementById("staff-input");
     const staffSendBtn = document.getElementById("btn-staff-send");
 
+    // Sidebar elements
+    const toolsToggle = document.getElementById("tools-toggle");
+    const toolsList = document.getElementById("tools-list");
+    const refsToggle = document.getElementById("refs-toggle");
+    const refsList = document.getElementById("refs-list");
+
     let ws = null;
     let sending = false;
     let staffSending = false;
+
+    // --- Sidebar ---
+    function setupToggle(btn, list) {
+        btn.addEventListener("click", function () {
+            btn.classList.toggle("open");
+            list.classList.toggle("collapsed");
+        });
+    }
+
+    async function loadTools() {
+        try {
+            const response = await fetch(`${BASE}/api/tools`);
+            if (!response.ok) return;
+            const data = await response.json();
+
+            data.tools.forEach(function (t) {
+                const li = document.createElement("li");
+                li.innerHTML =
+                    '<span class="tool-name">' + escapeHtml(t.name) + "</span>" +
+                    '<span class="tool-desc">' + escapeHtml(t.description) + "</span>";
+                toolsList.appendChild(li);
+            });
+
+            data.references.forEach(function (r) {
+                const li = document.createElement("li");
+                li.innerHTML =
+                    '<span class="tool-name">' + escapeHtml(r.name) + "</span>" +
+                    '<span class="tool-desc">' + escapeHtml(r.description) + "</span>";
+                refsList.appendChild(li);
+            });
+        } catch (err) {
+            console.error("Failed to load tools:", err);
+        }
+    }
+
+    function escapeHtml(text) {
+        var div = document.createElement("div");
+        div.textContent = text;
+        return div.innerHTML;
+    }
 
     // --- WebSocket ---
     function connectWS() {
@@ -41,13 +87,16 @@
         ws.onmessage = function (event) {
             const data = JSON.parse(event.data);
             if (data.type === "staff_message") {
-                // Staff reply → staff pane
+                // Staff message from #users channel → staff pane
                 addStaffMessage("staff", data.text, data.name);
+            } else if (data.type === "staff_in_llm") {
+                // Staff message from #llm thread → AI pane
+                addMessage("staff", data.text, data.name);
             } else if (data.type === "user_to_staff") {
                 // Echo of our message to staff → staff pane
                 addStaffMessage("user", data.text);
             } else if (data.type === "assistant") {
-                // LLM response triggered by staff !LLM → LLM pane
+                // LLM response → AI pane
                 addMessage("assistant", data.text, null, data.images);
             }
         };
@@ -261,6 +310,9 @@
     staffInputEl.addEventListener("input", autoResize);
 
     // --- Init ---
+    setupToggle(toolsToggle, toolsList);
+    setupToggle(refsToggle, refsList);
+    loadTools();
     connectWS();
     addSystemMessage("Welcome to BeamtimeHero! Ask questions about your beamline experiment.");
     addStaffSystemMessage("Send a message to beamline staff via Slack.");

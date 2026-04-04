@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 slack_bridge = SlackBridge()
 conversation: ConversationService | None = None
 connected_ws: set[WebSocket] = set()
+_event_loop: asyncio.AbstractEventLoop | None = None
 
 
 async def broadcast_ws(message: dict):
@@ -53,52 +54,80 @@ async def broadcast_ws(message: dict):
 
 def _broadcast(msg: dict):
     """Schedule a WebSocket broadcast from any thread."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.run_coroutine_threadsafe(broadcast_ws(msg), loop)
-        else:
-            loop.run_until_complete(broadcast_ws(msg))
-    except RuntimeError:
+    if _event_loop is None:
         logger.warning("No event loop available for WebSocket broadcast")
+        return
+    asyncio.run_coroutine_threadsafe(broadcast_ws(msg), _event_loop)
 
 
 def on_staff_message(text: str, staff_name: str):
-    """Called by SlackBridge when staff sends a message in the users channel."""
-    # Check for !LLM flag
-    route_to_llm = "!LLM" in text
+    """Called by SlackBridge when staff sends a message in the #users channel.
 
-    if route_to_llm:
-        display_text = text.replace("!LLM", "").strip()
-    else:
-        display_text = text
+    Pure relay — just forward to the web UI, no LLM involved.
+    """
+    _broadcast({"type": "staff_message", "name": staff_name, "text": text})
 
-    # Show staff message in the staff chat pane
-    _broadcast({"type": "staff_message", "name": staff_name, "text": display_text})
+
+def on_llm_thread_reply(text: str, staff_name: str):
+    """Called by SlackBridge when staff replies in a #llm channel thread.
+
+    Staff message joins the LLM conversation — displayed in the AI pane,
+    routed to the LLM, and response posted back to Slack.
+    """
+    # Show staff message in the AI Assistant pane (part of that conversation)
+    _broadcast({"type": "staff_in_llm", "name": staff_name, "text": text})
 
     if conversation:
-        if route_to_llm:
-            # Route to LLM and broadcast the response
-            result = conversation.handle_staff_llm(display_text, staff_name)
-            _broadcast({
-                "type": "assistant",
-                "text": result.text,
-                "images": result.images,
-            })
-            # Also post LLM response back to Slack LLM channel
-            slack_bridge.post_llm_response(result.text)
-        else:
-            # Buffer for context on the user's next message
-            conversation.buffer_staff_message(display_text, staff_name)
+        result = conversation.handle_staff_llm(text, staff_name)
+        _broadcast({
+            "type": "assistant",
+            "text": result.text,
+            "images": result.images,
+        })
+        slack_bridge.post_llm_response(result.text)
+
+
+# --- Staff DM conversations (independent from web app) ---
+_dm_conversations: dict[str, ConversationService] = {}
+
+
+def on_dm_message(text: str, staff_name: str, dm_thread_key: str):
+    """Called by SlackBridge when staff DMs the bot.
+
+    Each DM thread gets its own conversation session.
+    """
+    global _dm_conversations
+
+    if dm_thread_key not in _dm_conversations:
+        if not API_KEY:
+            logger.warning("Cannot handle DM: API_KEY not configured")
+            return
+        client = StanfordAPIClient()
+        _dm_conversations[dm_thread_key] = ConversationService(client)
+        logger.info("New DM conversation for %s (key: %s)", staff_name, dm_thread_key)
+
+    dm_conversation = _dm_conversations[dm_thread_key]
+
+    try:
+        result = dm_conversation.handle_staff_llm(text, staff_name)
+    except Exception as e:
+        logger.error("DM conversation error: %s", e, exc_info=True)
+        result_text = f"Error: {e}"
+    else:
+        result_text = result.text
+
+    # Reply in the DM thread
+    channel, thread_ts = dm_thread_key.split(":", 1)
+    slack_bridge.post_dm_reply(channel, thread_ts, result_text)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start Slack bridge on startup."""
-    global conversation
+    global conversation, _event_loop
 
-    # Store the event loop reference for cross-thread access
-    app.state.loop = asyncio.get_event_loop()
+    # Store the event loop reference for cross-thread broadcasts
+    _event_loop = asyncio.get_running_loop()
 
     # Initialize conversation service
     if API_KEY:
@@ -111,6 +140,8 @@ async def lifespan(app: FastAPI):
 
     # Start Slack bridge
     slack_bridge.set_staff_callback(on_staff_message)
+    slack_bridge.set_llm_thread_callback(on_llm_thread_reply)
+    slack_bridge.set_dm_callback(on_dm_message)
     slack_bridge.start()
 
     yield
@@ -168,6 +199,23 @@ async def chat(payload: dict):
     slack_bridge.post_llm_response(result.text)
 
     return {"response": result.text, "images": result.images}
+
+
+@app.get(f"{BASE_PATH}/api/tools")
+async def get_tools():
+    """Return available tools and reference docs for the frontend sidebar."""
+    from tools import TOOL_DEFINITIONS
+    from tools.cli import REFERENCE_DOCS
+
+    tools = [
+        {"name": t["function"]["name"], "description": t["function"]["description"]}
+        for t in TOOL_DEFINITIONS
+    ]
+    references = [
+        {"name": name, "description": doc["description"]}
+        for name, doc in REFERENCE_DOCS.items()
+    ]
+    return {"tools": tools, "references": references}
 
 
 @app.post(f"{BASE_PATH}/api/reset")
