@@ -17,7 +17,16 @@ ALLOWED_COMMANDS = {
     "wa": "wa",           # print all motor positions
     "pwd": "pwd",         # print current working directory
     "fon": "fon",         # show open data/log files
-    "get_S": "p S",       # print counter array values
+    "get_S": "p S",       # print counter array S — indices map to CNTnnn in config
+}
+
+# Extra instructions returned with specific commands
+COMMAND_HINTS = {
+    "get_S": (
+        "The S array indices correspond to counter numbers in the SPEC config "
+        "(S[0]=CNT000, S[1]=CNT001, etc.). Use get-counter-config to map "
+        "indices to counter names (e.g. I0, I1, vortDT)."
+    ),
 }
 
 
@@ -64,7 +73,9 @@ def send_spec_command(command: str) -> str:
     time.sleep(2)
 
     logger.info("Sent SPEC command: %s (as '%s')", command, spec_cmd)
-    return (
-        f"Command '{spec_cmd}' sent to SPEC and executed. "
-        "Now use get-latest-log-entries to see the output."
-    )
+
+    hint = COMMAND_HINTS.get(command, "")
+    msg = f"Command '{spec_cmd}' sent to SPEC and executed. Now use get-latest-log-entries to see the output."
+    if hint:
+        msg += f"\n\nNote: {hint}"
+    return msg

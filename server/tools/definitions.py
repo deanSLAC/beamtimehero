@@ -386,7 +386,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "spec_command",
-            "description": "Send a whitelisted command to the running SPEC session. Allowed commands: wa (motor positions), pwd (current directory), fon (open files), get_S (counter values). Check the log file for output after sending.",
+            "description": "Send a whitelisted command to the running SPEC session. Allowed commands: wa (motor positions), pwd (current directory), fon (open files), get_S (counter values — use get-counter-config to map S[] indices to counter names). Check the log file for output after sending.",
             "parameters": {
                 "type": "object",
                 "properties": {
