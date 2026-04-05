@@ -221,6 +221,14 @@ def execute_tool(name: str, arguments: dict) -> tuple[str, list[str]]:
             rel_path = local_data.write_file(filename, arguments.get("content", ""))
             return f"Edited macro saved: {rel_path}", images_b64
 
+        elif name == "get_motor_config":
+            from spec_config import get_motor_config
+            return get_motor_config(), images_b64
+
+        elif name == "get_counter_config":
+            from spec_config import get_counter_config
+            return get_counter_config(), images_b64
+
         elif name == "spec_command":
             from spec_client import send_spec_command
             result = send_spec_command(arguments.get("command", ""))

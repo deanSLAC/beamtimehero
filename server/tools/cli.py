@@ -128,6 +128,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--original-name", required=True, help="Original macro filename (e.g. run01.mac)")
     p.add_argument("--content", required=True, help="The edited macro content")
 
+    # --- SPEC config commands ---
+    sub.add_parser("get-motor-config", help="Get SPEC motor configuration (controller, steps, mnemonic, name)")
+    sub.add_parser("get-counter-config", help="Get SPEC counter configuration (controller, channel, mnemonic, name)")
+
     # --- SPEC command ---
     p = sub.add_parser("spec-command", help="Send a command to the running SPEC session (whitelisted commands only)")
     p.add_argument("--cmd", required=True, dest="spec_cmd", help="Command to send: wa, pwd, fon, or get_S")
@@ -289,6 +293,8 @@ def run_cli(command_str: str) -> tuple[str, list[str]]:
             "original_name": args.original_name,
             "content": args.content,
         })
+    elif tool_name in ("get_motor_config", "get_counter_config"):
+        return execute_tool(tool_name, {})
     elif tool_name == "spec_command":
         return execute_tool(tool_name, {"command": args.spec_cmd})
 

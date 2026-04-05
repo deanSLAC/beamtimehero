@@ -369,6 +369,22 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
+            "name": "get_motor_config",
+            "description": "Get SPEC motor configuration from the config file. Shows controller, steps/unit, slew rate, flags, mnemonic, and name for each motor. Motor index (MOTnnn) maps to the A[] array.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_counter_config",
+            "description": "Get SPEC counter configuration from the config file. Shows controller, unit, channel, scale, flags, mnemonic, and name for each counter. Counter index (CNTnnn) maps to the S[] array.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "spec_command",
             "description": "Send a whitelisted command to the running SPEC session. Allowed commands: wa (motor positions), pwd (current directory), fon (open files), get_S (counter values). Check the log file for output after sending.",
             "parameters": {

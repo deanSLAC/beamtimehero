@@ -136,10 +136,21 @@ body {
     list-style: none;
     padding: 0 14px 10px;
     margin: 0;
+    max-height: 50vh;
+    overflow-y: auto;
 }
 
 .sidebar-list.collapsed {
     display: none;
+}
+
+.sidebar-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+.sidebar-list::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 2px;
 }
 
 .sidebar-list li {
