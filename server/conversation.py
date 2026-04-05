@@ -19,7 +19,7 @@ from tools.cli import run_cli
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_ROUNDS = 5
+MAX_TOOL_ROUNDS = 20
 
 
 @dataclass

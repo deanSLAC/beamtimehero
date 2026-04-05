@@ -6,6 +6,7 @@ Only whitelisted commands are allowed.
 """
 import logging
 import subprocess
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +60,11 @@ def send_spec_command(command: str) -> str:
         capture_output=True, text=True, check=True,
     )
 
+    # Wait for SPEC to process the command and write to log
+    time.sleep(2)
+
     logger.info("Sent SPEC command: %s (as '%s')", command, spec_cmd)
     return (
-        f"Command '{spec_cmd}' sent to SPEC. "
-        "Check the log file for output (use get-latest-log-entries)."
+        f"Command '{spec_cmd}' sent to SPEC and executed. "
+        "Now use get-latest-log-entries to see the output."
     )

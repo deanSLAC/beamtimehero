@@ -130,7 +130,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # --- SPEC command ---
     p = sub.add_parser("spec-command", help="Send a command to the running SPEC session (whitelisted commands only)")
-    p.add_argument("--command", required=True, help="Command to send: wa, pwd, fon, or get_S")
+    p.add_argument("--cmd", required=True, dest="spec_cmd", help="Command to send: wa, pwd, fon, or get_S")
 
     # --- Reference command ---
     p = sub.add_parser("reference", help="Look up beamline reference documents")
@@ -290,6 +290,6 @@ def run_cli(command_str: str) -> tuple[str, list[str]]:
             "content": args.content,
         })
     elif tool_name == "spec_command":
-        return execute_tool(tool_name, {"command": args.command})
+        return execute_tool(tool_name, {"command": args.spec_cmd})
 
     return execute_tool(tool_name, tool_args)
