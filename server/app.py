@@ -19,7 +19,12 @@ from fastapi.staticfiles import StaticFiles
 # Add server/ to path for sibling imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config import BASE_PATH, STATIC_DIR, API_KEY
+import re
+from datetime import datetime
+
+import requests
+
+from config import BASE_PATH, STATIC_DIR, API_KEY, API_BASE_URL, PROJECT_ROOT
 
 # Add beamline_lib so blmcp / bldata_analysis / db_connection are importable
 sys.path.insert(0, str(Path(__file__).parent.parent / "beamline_lib"))
@@ -268,6 +273,75 @@ async def staff_message(payload: dict):
     await broadcast_ws({"type": "user_to_staff", "text": user_text})
 
     return {"status": "sent"}
+
+
+@app.post(f"{BASE_PATH}/api/suggestion")
+async def submit_suggestion(payload: dict):
+    """Accept an LLM upgrade suggestion, classify it via LLM, and save."""
+    raw_text = payload.get("suggestion", "").strip()
+    if not raw_text:
+        return JSONResponse({"error": "Empty suggestion"}, status_code=400)
+
+    if not API_KEY:
+        return JSONResponse({"error": "API_KEY not configured"}, status_code=503)
+
+    classification_prompt = (
+        "You are a classifier. The user has submitted a suggestion for improving an AI assistant. "
+        "Analyze the suggestion and return ONLY valid JSON with these fields:\n"
+        '- "summary_3word": a 3-word summary (lowercase, underscores instead of spaces)\n'
+        '- "summary_2sentence": a 2-sentence summary (include ONLY if the suggestion is longer than 5 sentences, otherwise set to null)\n'
+        '- "valid": 1 if this is a genuine, actionable suggestion, 0 if it is blank, gibberish, a single character, or not a real suggestion\n'
+        "Return ONLY the JSON object, no markdown fencing."
+    )
+
+    messages = [
+        {"role": "system", "content": classification_prompt},
+        {"role": "user", "content": raw_text},
+    ]
+
+    try:
+        client = StanfordAPIClient()
+        url = f"{API_BASE_URL}/chat/completions"
+        req_payload = {
+            "model": client.model,
+            "messages": messages,
+            "temperature": 0.1,
+        }
+        response = requests.post(
+            url, headers=client._get_headers(), json=req_payload, timeout=60
+        )
+        response.raise_for_status()
+        result = response.json()
+        content = result["choices"][0]["message"]["content"]
+
+        # Strip markdown fences if present
+        content = re.sub(r"^```json\s*", "", content.strip())
+        content = re.sub(r"\s*```$", "", content.strip())
+        parsed = json.loads(content)
+    except Exception as e:
+        logger.error("Suggestion classification failed: %s", e, exc_info=True)
+        return JSONResponse({"error": "Failed to classify suggestion"}, status_code=500)
+
+    # Save to disk
+    suggestions_dir = PROJECT_ROOT / "user_suggestions"
+    suggestions_dir.mkdir(exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    three_word = parsed.get("summary_3word", "unknown")
+    three_word = re.sub(r"[^a-z0-9_]", "", three_word.lower().replace(" ", "_"))[:30]
+    filename = f"suggestion_{three_word}_{timestamp}.json"
+
+    record = {
+        "timestamp": datetime.now().isoformat(),
+        "raw_suggestion": raw_text,
+        "summary_2sentence": parsed.get("summary_2sentence"),
+        "valid": parsed.get("valid", 0),
+    }
+
+    (suggestions_dir / filename).write_text(json.dumps(record, indent=2))
+    logger.info("Saved suggestion: %s (valid=%s)", filename, record["valid"])
+
+    return {"status": "saved", "summary": three_word, "valid": record["valid"]}
 
 
 @app.websocket(f"{BASE_PATH}/ws")

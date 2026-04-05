@@ -28,6 +28,13 @@
     const refsToggle = document.getElementById("refs-toggle");
     const refsList = document.getElementById("refs-list");
 
+    // Suggestion elements
+    const suggestionsToggle = document.getElementById("suggestions-toggle");
+    const suggestionsContent = document.getElementById("suggestions-content");
+    const suggestionInput = document.getElementById("suggestion-input");
+    const suggestionSendBtn = document.getElementById("btn-suggestion-send");
+    const suggestionFeedback = document.getElementById("suggestion-feedback");
+
     let ws = null;
     let sending = false;
     let staffSending = false;
@@ -282,6 +289,45 @@
         }
     }
 
+    // --- Suggestion API ---
+    let suggestionSending = false;
+
+    async function sendSuggestion() {
+        const text = suggestionInput.value.trim();
+        if (!text || suggestionSending) return;
+
+        suggestionSending = true;
+        suggestionSendBtn.disabled = true;
+        suggestionFeedback.textContent = "Submitting...";
+        suggestionFeedback.className = "suggestion-feedback";
+
+        try {
+            const response = await fetch(`${BASE}/api/suggestion`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ suggestion: text }),
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                suggestionInput.value = "";
+                suggestionInput.style.height = "auto";
+                suggestionFeedback.textContent = "Thank you! Your suggestion has been recorded.";
+                suggestionFeedback.className = "suggestion-feedback success";
+            } else {
+                suggestionFeedback.textContent = "Error: " + (data.error || "Failed to submit");
+                suggestionFeedback.className = "suggestion-feedback error";
+            }
+        } catch (err) {
+            suggestionFeedback.textContent = "Connection error: " + err.message;
+            suggestionFeedback.className = "suggestion-feedback error";
+        } finally {
+            suggestionSending = false;
+            suggestionSendBtn.disabled = false;
+        }
+    }
+
     // --- Events ---
     sendBtn.addEventListener("click", sendMessage);
     resetBtn.addEventListener("click", resetConversation);
@@ -309,9 +355,19 @@
     inputEl.addEventListener("input", autoResize);
     staffInputEl.addEventListener("input", autoResize);
 
+    suggestionSendBtn.addEventListener("click", sendSuggestion);
+    suggestionInput.addEventListener("input", autoResize);
+    suggestionInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendSuggestion();
+        }
+    });
+
     // --- Init ---
     setupToggle(toolsToggle, toolsList);
     setupToggle(refsToggle, refsList);
+    setupToggle(suggestionsToggle, suggestionsContent);
     loadTools();
     connectWS();
     addSystemMessage("Welcome to BeamtimeHero! Ask questions about your beamline experiment.");
