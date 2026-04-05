@@ -190,6 +190,42 @@ def execute_tool(name: str, arguments: dict) -> tuple[str, list[str]]:
             summary = f"Plot generated: {title or 'untitled'} ({len(x)} points, {len(series)} series)"
             return summary, images_b64
 
+        elif name == "list_files":
+            import local_data
+            result = local_data.list_files(pattern=arguments.get("pattern", "*"))
+            if not result:
+                return "No files found in scan directory.", images_b64
+            return json.dumps(result, indent=2), images_b64
+
+        elif name == "read_file":
+            import local_data
+            content = local_data.read_file(arguments.get("path", ""))
+            return content, images_b64
+
+        elif name == "write_summary":
+            import local_data
+            from datetime import datetime
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"beamtimehero_conversation_summary_{ts}.txt"
+            rel_path = local_data.write_file(filename, arguments.get("content", ""))
+            return f"Summary saved: {rel_path}", images_b64
+
+        elif name == "write_macro":
+            import local_data
+            from datetime import datetime
+            original = arguments.get("original_name", "macro")
+            # Strip .mac extension if present to build new name
+            base = original.rsplit(".mac", 1)[0] if original.endswith(".mac") else original
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{base}_hero-edit_{ts}.mac"
+            rel_path = local_data.write_file(filename, arguments.get("content", ""))
+            return f"Edited macro saved: {rel_path}", images_b64
+
+        elif name == "spec_command":
+            from spec_client import send_spec_command
+            result = send_spec_command(arguments.get("command", ""))
+            return result, images_b64
+
         else:
             return f"Unknown tool: {name}", images_b64
 

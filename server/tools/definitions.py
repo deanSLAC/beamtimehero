@@ -293,6 +293,97 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_files",
+            "description": "List non-SPEC files in the scan directory (macros, configs, text files).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Glob pattern to filter files (default: *). Example: *.mac",
+                        "default": "*",
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read a text file from the scan directory. Use list_files to discover available files.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "File path relative to the scan directory (e.g. run01.mac)",
+                    }
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_summary",
+            "description": "Save a conversation summary as a timestamped .txt file in the scan directory.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "The summary text to write.",
+                    }
+                },
+                "required": ["content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_macro",
+            "description": "Save an edited macro as a new .mac file in the scan directory. The file is saved with a _hero-edit_<timestamp> suffix to preserve the original.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "original_name": {
+                        "type": "string",
+                        "description": "Original macro filename (e.g. run01.mac).",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The edited macro content.",
+                    },
+                },
+                "required": ["original_name", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spec_command",
+            "description": "Send a whitelisted command to the running SPEC session. Allowed commands: wa (motor positions), pwd (current directory), fon (open files), get_S (counter values). Check the log file for output after sending.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "Command name: wa, pwd, fon, or get_S",
+                        "enum": ["wa", "pwd", "fon", "get_S"],
+                    }
+                },
+                "required": ["command"],
+            },
+        },
+    },
 ]
 
 # Single tool definition for CLI mode

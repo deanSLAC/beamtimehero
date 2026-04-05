@@ -13,11 +13,20 @@ command, call `beamtimehero <command> --help`. Common workflows:
 - Check logs: `beamtimehero get-latest-log-entries`
 - Search logs: `beamtimehero search-logs --query <text>`
 - Look up reference docs: `beamtimehero reference --list`
+- List user files (macros, configs): `beamtimehero list-files`
+- Read a file: `beamtimehero read-file --path <filename>`
+- Save a conversation summary: `beamtimehero write-summary --content "<text>"`
+- Save an edited macro: `beamtimehero write-macro --original-name <name> --content "<text>"`
+- Query SPEC session: `beamtimehero spec-command --command wa`
 
 IMPORTANT: Reference documents contain procedures, safety rules, and operational
 guides (e.g. cryostat procedures, SPEC commands, user operations). When the user
 asks about procedures, equipment operation, or safety, ALWAYS check the reference
 documents first with `beamtimehero reference --list`, then fetch the relevant doc.
+
+When helping with macros: use `list-files --pattern *.mac` to find macros, then
+`read-file` to view them. After editing, save with `write-macro` (preserves the
+original by saving as <name>_hero-edit_<timestamp>.mac).
 
 Start by discovering what's available, then use the appropriate commands to
 answer the user's question. Scan data is read directly from SPEC files on disk.

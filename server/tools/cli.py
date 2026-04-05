@@ -114,6 +114,24 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--title", help="Plot title")
     p.add_argument("--labels", help="JSON array of legend labels")
 
+    # --- File commands ---
+    p = sub.add_parser("list-files", help="List non-SPEC files in the scan directory (macros, configs, etc.)")
+    p.add_argument("--pattern", default="*", help="Glob pattern to filter files (default: *)")
+
+    p = sub.add_parser("read-file", help="Read a text file from the scan directory")
+    p.add_argument("--path", required=True, help="File path relative to scan directory (e.g. run01.mac)")
+
+    p = sub.add_parser("write-summary", help="Save a conversation summary as a .txt file in the scan directory")
+    p.add_argument("--content", required=True, help="The summary text to write")
+
+    p = sub.add_parser("write-macro", help="Save an edited macro as a new .mac file in the scan directory")
+    p.add_argument("--original-name", required=True, help="Original macro filename (e.g. run01.mac)")
+    p.add_argument("--content", required=True, help="The edited macro content")
+
+    # --- SPEC command ---
+    p = sub.add_parser("spec-command", help="Send a command to the running SPEC session (whitelisted commands only)")
+    p.add_argument("--command", required=True, help="Command to send: wa, pwd, fon, or get_S")
+
     # --- Reference command ---
     p = sub.add_parser("reference", help="Look up beamline reference documents")
     p.add_argument("doc_name", nargs="?", help="Name of the reference document to display")
@@ -258,5 +276,20 @@ def run_cli(command_str: str) -> tuple[str, list[str]]:
             tool_args["title"] = args.title
         if args.labels:
             tool_args["labels"] = json.loads(args.labels)
+
+    # New tools handled directly (not routed through executor)
+    if tool_name == "list_files":
+        return execute_tool(tool_name, {"pattern": args.pattern})
+    elif tool_name == "read_file":
+        return execute_tool(tool_name, {"path": args.path})
+    elif tool_name == "write_summary":
+        return execute_tool(tool_name, {"content": args.content})
+    elif tool_name == "write_macro":
+        return execute_tool(tool_name, {
+            "original_name": args.original_name,
+            "content": args.content,
+        })
+    elif tool_name == "spec_command":
+        return execute_tool(tool_name, {"command": args.command})
 
     return execute_tool(tool_name, tool_args)

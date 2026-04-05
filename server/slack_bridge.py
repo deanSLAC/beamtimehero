@@ -36,6 +36,8 @@ class SlackBridge:
         self._on_llm_thread_reply: Callable[[str, str], None] | None = None
         # callback(text, staff_name, dm_thread_key) for staff DMs
         self._on_dm_message: Callable[[str, str, str], None] | None = None
+        # callback(dir_name) for !setdir command
+        self._on_setdir: Callable[[str], str] | None = None
         self._app: App | None = None
         self._handler: SocketModeHandler | None = None
         self._bot_user_id: str | None = None
@@ -51,6 +53,10 @@ class SlackBridge:
     def set_dm_callback(self, callback: Callable[[str, str, str], None]):
         """Set callback for staff DM messages."""
         self._on_dm_message = callback
+
+    def set_setdir_callback(self, callback: Callable[[str], str]):
+        """Set callback for !setdir command. Returns status message."""
+        self._on_setdir = callback
 
     def start(self):
         """Start Slack bot in a background thread."""
@@ -107,6 +113,26 @@ class SlackBridge:
             user_id = event.get("user", "")
 
             if not text:
+                return
+
+            # --- !setdir command (any channel) ---
+            if text.startswith("!setdir"):
+                dir_name = text[len("!setdir"):].strip()
+                if dir_name and self._on_setdir:
+                    try:
+                        result = self._on_setdir(dir_name)
+                        # Reply in the same channel
+                        client.chat_postMessage(
+                            channel=channel,
+                            text=result,
+                            thread_ts=thread_ts or event.get("ts"),
+                        )
+                    except Exception as e:
+                        client.chat_postMessage(
+                            channel=channel,
+                            text=f"Error: {e}",
+                            thread_ts=thread_ts or event.get("ts"),
+                        )
                 return
 
             # --- Staff DMs to the bot ---

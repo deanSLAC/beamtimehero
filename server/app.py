@@ -121,6 +121,28 @@ def on_dm_message(text: str, staff_name: str, dm_thread_key: str):
     slack_bridge.post_dm_reply(channel, thread_ts, result_text)
 
 
+def on_setdir(dir_name: str) -> str:
+    """Called by SlackBridge when staff sends !setdir.
+
+    Changes the scan directory and resets the conversation.
+    """
+    global conversation
+
+    import bl_config
+    from local_data import clear_cache
+
+    bl_config.set_scan_dir(dir_name)
+    clear_cache()
+
+    # Reset conversation (same as browser reset)
+    if API_KEY:
+        client = StanfordAPIClient()
+        conversation = ConversationService(client)
+    slack_bridge.reset_thread()
+
+    return f"Scan directory set to `{bl_config.BL_SCAN_DIR}`. Conversation reset."
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start Slack bridge on startup."""
@@ -142,6 +164,7 @@ async def lifespan(app: FastAPI):
     slack_bridge.set_staff_callback(on_staff_message)
     slack_bridge.set_llm_thread_callback(on_llm_thread_reply)
     slack_bridge.set_dm_callback(on_dm_message)
+    slack_bridge.set_setdir_callback(on_setdir)
     slack_bridge.start()
 
     yield

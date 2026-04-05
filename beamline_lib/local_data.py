@@ -1,8 +1,8 @@
 """Local filesystem data access -- reads SPEC data files directly via silx.
 
-No database or pickle files required. Scans BL_SCAN_DIR for SPEC files,
-parses them with silx.io.specfile.SpecFile, and caches scan metadata in a
-JSON sidecar file for performance on repeated queries.
+Scans the active scan directory for SPEC files, parses them with
+silx.io.specfile.SpecFile, and caches scan metadata in a JSON sidecar
+file for performance on repeated queries.
 """
 from __future__ import annotations
 
@@ -17,12 +17,10 @@ from silx.io.specfile import SpecFile, is_specfile
 
 logger = logging.getLogger(__name__)
 
-from bl_config import BL_SCAN_DIR
+import bl_config
 
-# Cache file for scan metadata (lives next to SPEC files)
-_CACHE_FILE = BL_SCAN_DIR / ".scan_metadata_cache.json" if BL_SCAN_DIR else None
 _metadata_cache: dict | None = None
-_cache_mtime: float = 0
+_cached_file_mtimes: dict[str, float] = {}  # file_path -> mtime at cache time
 
 
 # ---------------------------------------------------------------------------
@@ -34,16 +32,14 @@ def _parse_spec_date(header_lines: list[str]) -> str | None:
     for line in header_lines:
         if line.startswith("#D "):
             date_str = line[3:].strip()
-            # SPEC date format: "Mon Apr 01 12:34:56 2024"
             for fmt in (
                 "%a %b %d %H:%M:%S %Y",
-                "%a %b  %d %H:%M:%S %Y",  # single-digit day with extra space
+                "%a %b  %d %H:%M:%S %Y",
             ):
                 try:
                     return datetime.strptime(date_str, fmt).isoformat()
                 except ValueError:
                     continue
-            # Fallback: try generic parsing
             try:
                 from email.utils import parsedate_to_datetime
                 return parsedate_to_datetime(date_str).isoformat()
@@ -56,7 +52,6 @@ def _parse_count_time(header_lines: list[str]) -> float | None:
     """Extract count time from #T header line."""
     for line in header_lines:
         if line.startswith("#T "):
-            # Format: "#T 1  (Seconds)" or "#T 0.5"
             parts = line[3:].strip().split()
             if parts:
                 try:
@@ -78,26 +73,20 @@ def _parse_scan_command(header_lines: list[str]) -> tuple[int | None, str]:
 
 
 def _read_spec_scan(spec_path: str | Path, scan_index: int) -> pd.DataFrame | None:
-    """Read a single scan from a SPEC file and return as a DataFrame.
-
-    Returns a DataFrame with counter columns and the scan motor as the index,
-    or None if the scan cannot be read.
-    """
+    """Read a single scan from a SPEC file and return as a DataFrame."""
     try:
         sf = SpecFile(str(spec_path))
         scan = sf[scan_index]
         labels = scan.labels
-        data = scan.data  # shape: (num_counters, num_points)
+        data = scan.data
 
         if data.size == 0:
             return None
 
         df = pd.DataFrame(data.T, columns=labels)
-        # Set the first column (scan motor) as index
         if labels:
             df = df.set_index(labels[0])
 
-        # Store metadata in attrs for compatibility
         header = scan.scan_header
         date_str = _parse_spec_date(header)
         count_time = _parse_count_time(header)
@@ -105,13 +94,10 @@ def _read_spec_scan(spec_path: str | Path, scan_index: int) -> pd.DataFrame | No
 
         motor_dict = {}
         try:
-            motor_names = scan.motor_names
-            motor_values = scan.motor_positions
-            motor_dict = dict(zip(motor_names, motor_values))
+            motor_dict = dict(zip(scan.motor_names, scan.motor_positions))
         except Exception:
             pass
 
-        # Compute timing from Epoch counter if available
         epoch_col = None
         for col in df.columns:
             if col.lower() == "epoch":
@@ -151,27 +137,52 @@ def _read_spec_scan(spec_path: str | Path, scan_index: int) -> pd.DataFrame | No
 # Scan metadata cache
 # ---------------------------------------------------------------------------
 
-def _load_cache() -> dict:
-    """Load or build the scan metadata cache.
+def _get_cache_file() -> Path | None:
+    scan_dir = bl_config.BL_SCAN_DIR
+    if scan_dir:
+        return scan_dir / ".scan_metadata_cache.json"
+    return None
 
-    Cache is a dict keyed by "file_name::scan_number" with metadata dicts.
-    Rebuilds if the cache file is missing or older than the scan directory.
+
+def _load_cache() -> dict:
+    """Load or rebuild the scan metadata cache.
+
+    Checks per-file mtimes to detect new or changed SPEC files and
+    re-parses only those files.
     """
-    global _metadata_cache, _cache_mtime
+    global _metadata_cache, _cached_file_mtimes
+
+    scan_dir = bl_config.BL_SCAN_DIR
 
     if _metadata_cache is not None:
-        try:
-            dir_mtime = BL_SCAN_DIR.stat().st_mtime if BL_SCAN_DIR.exists() else 0
-        except OSError:
-            dir_mtime = 0
-        if dir_mtime <= _cache_mtime:
+        # Check if any SPEC files have changed or new ones appeared
+        changed = _find_changed_files(scan_dir)
+        if not changed:
             return _metadata_cache
+        # Re-parse only changed files, merge into existing cache
+        logger.info("Re-parsing %d changed SPEC file(s)", len(changed))
+        new_entries = _parse_spec_files(changed)
+        _metadata_cache.update(new_entries)
+        _save_cache()
+        return _metadata_cache
 
     # Try loading from disk
-    if _CACHE_FILE and _CACHE_FILE.exists():
+    cache_file = _get_cache_file()
+    if cache_file and cache_file.exists():
         try:
-            _metadata_cache = json.loads(_CACHE_FILE.read_text())
-            _cache_mtime = _CACHE_FILE.stat().st_mtime
+            _metadata_cache = json.loads(cache_file.read_text())
+            # Rebuild file mtime tracking from cache entries
+            for entry in _metadata_cache.values():
+                fp = entry.get("file_path")
+                if fp:
+                    _cached_file_mtimes[fp] = entry.get("file_mtime", 0)
+            # Check for changes since disk cache was written
+            changed = _find_changed_files(scan_dir)
+            if changed:
+                logger.info("Re-parsing %d changed SPEC file(s) since last cache", len(changed))
+                new_entries = _parse_spec_files(changed)
+                _metadata_cache.update(new_entries)
+                _save_cache()
             return _metadata_cache
         except (json.JSONDecodeError, OSError):
             pass
@@ -182,114 +193,163 @@ def _load_cache() -> dict:
     return _metadata_cache
 
 
-def _build_metadata_cache() -> dict:
-    """Scan BL_SCAN_DIR for SPEC files and extract scan metadata via silx."""
+def _find_changed_files(scan_dir: Path) -> list[Path]:
+    """Find SPEC files that are new or have a different mtime than cached."""
+    changed = []
+    if not scan_dir or not scan_dir.exists():
+        return changed
+
+    for child in scan_dir.iterdir():
+        if child.is_dir():
+            for spec_path in child.iterdir():
+                if not spec_path.is_file():
+                    continue
+                _check_file(spec_path, changed)
+        elif child.is_file():
+            _check_file(child, changed)
+
+    return changed
+
+
+def _check_file(spec_path: Path, changed: list[Path]):
+    """Check if a single file needs re-parsing."""
+    try:
+        if not is_specfile(str(spec_path)):
+            return
+    except Exception:
+        return
+    fp = str(spec_path)
+    current_mtime = spec_path.stat().st_mtime
+    if fp not in _cached_file_mtimes or _cached_file_mtimes[fp] < current_mtime:
+        changed.append(spec_path)
+        _cached_file_mtimes[fp] = current_mtime
+
+
+def _parse_spec_files(file_list: list[Path]) -> dict:
+    """Parse a list of SPEC files and return cache entries."""
     cache = {}
-
-    if not BL_SCAN_DIR or not BL_SCAN_DIR.exists():
-        return cache
-
-    for exp_dir in sorted(BL_SCAN_DIR.iterdir()):
-        if not exp_dir.is_dir():
+    for spec_path in file_list:
+        try:
+            sf = SpecFile(str(spec_path))
+        except Exception:
+            logger.debug("Failed to open SPEC file: %s", spec_path)
             continue
-        for spec_path in exp_dir.iterdir():
-            if not spec_path.is_file():
-                continue
+
+        file_name = spec_path.name
+        file_mtime = spec_path.stat().st_mtime
+        exp_name = spec_path.parent.name
+
+        for scan_idx in range(len(sf)):
             try:
-                if not is_specfile(str(spec_path)):
-                    continue
-            except Exception:
-                continue
+                scan = sf[scan_idx]
+                header = scan.scan_header
+                scan_number = scan.number
+                _, command = _parse_scan_command(header)
+                date_str = _parse_spec_date(header)
+                count_time = _parse_count_time(header)
+                labels = scan.labels
+                data = scan.data
+                num_points = data.shape[1] if data.ndim == 2 else 0
 
-            try:
-                sf = SpecFile(str(spec_path))
-            except Exception:
-                logger.debug("Failed to open SPEC file: %s", spec_path)
-                continue
-
-            file_name = spec_path.name
-            file_mtime = spec_path.stat().st_mtime
-
-            for scan_idx in range(len(sf)):
+                motor_dict = {}
                 try:
-                    scan = sf[scan_idx]
-                    header = scan.scan_header
-                    scan_number = scan.number
-                    _, command = _parse_scan_command(header)
-                    date_str = _parse_spec_date(header)
-                    count_time = _parse_count_time(header)
-                    labels = scan.labels
-                    data = scan.data
-                    num_points = data.shape[1] if data.ndim == 2 else 0
+                    motor_dict = dict(zip(scan.motor_names, scan.motor_positions))
+                except Exception:
+                    pass
 
-                    motor_dict = {}
-                    try:
-                        motor_dict = dict(zip(scan.motor_names, scan.motor_positions))
-                    except Exception:
-                        pass
+                acquisition = None
+                wall_clock = None
+                dead_time = None
+                if count_time is not None and num_points > 0:
+                    acquisition = count_time * num_points
+                if num_points > 1 and labels:
+                    epoch_idx = None
+                    for i, lbl in enumerate(labels):
+                        if lbl.lower() == "epoch":
+                            epoch_idx = i
+                            break
+                    if epoch_idx is not None:
+                        epoch_vals = data[epoch_idx]
+                        wall_clock = float(epoch_vals[-1] - epoch_vals[0])
+                        if acquisition is not None:
+                            dead_time = wall_clock - acquisition
 
-                    # Compute timing
-                    acquisition = None
-                    wall_clock = None
-                    dead_time = None
-                    if count_time is not None and num_points > 0:
-                        acquisition = count_time * num_points
-                    # Check for Epoch counter
-                    if num_points > 1 and labels:
-                        epoch_idx = None
-                        for i, lbl in enumerate(labels):
-                            if lbl.lower() == "epoch":
-                                epoch_idx = i
-                                break
-                        if epoch_idx is not None:
-                            epoch_vals = data[epoch_idx]
-                            wall_clock = float(epoch_vals[-1] - epoch_vals[0])
-                            if acquisition is not None:
-                                dead_time = wall_clock - acquisition
-
-                    key = f"{file_name}::{scan_number}"
-                    cache[key] = {
-                        "file_name": file_name,
-                        "file_path": str(spec_path),
-                        "experiment": exp_dir.name,
-                        "scan_number": scan_number,
-                        "scan_index": scan_idx,
-                        "scan_command": command,
-                        "date_time": date_str,
-                        "epoch": datetime.fromisoformat(date_str).timestamp() if date_str else None,
-                        "motor_positions": motor_dict,
-                        "counters": list(labels) if labels else [],
-                        "num_points": num_points,
-                        "count_time": count_time,
-                        "acquisition_seconds": acquisition,
-                        "wall_clock_seconds": wall_clock,
-                        "dead_time_seconds": dead_time,
-                        "file_mtime": file_mtime,
-                    }
-                except Exception as e:
-                    logger.debug("Failed to parse scan %d in %s: %s", scan_idx, spec_path, e)
-                    continue
+                key = f"{file_name}::{scan_number}"
+                cache[key] = {
+                    "file_name": file_name,
+                    "file_path": str(spec_path),
+                    "experiment": exp_name,
+                    "scan_number": scan_number,
+                    "scan_index": scan_idx,
+                    "scan_command": command,
+                    "date_time": date_str,
+                    "epoch": datetime.fromisoformat(date_str).timestamp() if date_str else None,
+                    "motor_positions": motor_dict,
+                    "counters": list(labels) if labels else [],
+                    "num_points": num_points,
+                    "count_time": count_time,
+                    "acquisition_seconds": acquisition,
+                    "wall_clock_seconds": wall_clock,
+                    "dead_time_seconds": dead_time,
+                    "file_mtime": file_mtime,
+                }
+            except Exception as e:
+                logger.debug("Failed to parse scan %d in %s: %s", scan_idx, spec_path, e)
+                continue
 
     return cache
 
 
+def _build_metadata_cache() -> dict:
+    """Scan BL_SCAN_DIR for SPEC files and extract scan metadata via silx."""
+    scan_dir = bl_config.BL_SCAN_DIR
+    if not scan_dir or not scan_dir.exists():
+        return {}
+
+    all_spec_files = []
+    for child in scan_dir.iterdir():
+        if child.is_dir():
+            for spec_path in child.iterdir():
+                if spec_path.is_file():
+                    try:
+                        if is_specfile(str(spec_path)):
+                            all_spec_files.append(spec_path)
+                            _cached_file_mtimes[str(spec_path)] = spec_path.stat().st_mtime
+                    except Exception:
+                        continue
+        elif child.is_file():
+            try:
+                if is_specfile(str(child)):
+                    all_spec_files.append(child)
+                    _cached_file_mtimes[str(child)] = child.stat().st_mtime
+            except Exception:
+                continue
+
+    return _parse_spec_files(all_spec_files)
+
+
 def _save_cache():
     """Persist cache to disk."""
-    global _cache_mtime
-    if not _CACHE_FILE or not _metadata_cache:
+    cache_file = _get_cache_file()
+    if not cache_file or not _metadata_cache:
         return
     try:
-        _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _CACHE_FILE.write_text(json.dumps(_metadata_cache, default=str))
-        _cache_mtime = _CACHE_FILE.stat().st_mtime
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(json.dumps(_metadata_cache, default=str))
     except OSError as e:
         logger.warning("Failed to save metadata cache: %s", e)
 
 
+def clear_cache():
+    """Clear the in-memory cache. Called when scan dir changes."""
+    global _metadata_cache, _cached_file_mtimes
+    _metadata_cache = None
+    _cached_file_mtimes.clear()
+
+
 def refresh_cache():
     """Force a full cache rebuild."""
-    global _metadata_cache
-    _metadata_cache = None
+    clear_cache()
     _load_cache()
 
 
@@ -428,3 +488,99 @@ def get_scan_numbers_for_file(file_name) -> list[int]:
             numbers.append(entry["scan_number"])
     numbers.sort()
     return numbers
+
+
+# ---------------------------------------------------------------------------
+# File access tools (non-SPEC files in scan dir)
+# ---------------------------------------------------------------------------
+
+MAX_READ_SIZE = 100 * 1024  # 100KB
+
+
+def list_files(pattern: str = "*") -> list[dict]:
+    """List non-SPEC files in the scan directory."""
+    scan_dir = bl_config.BL_SCAN_DIR
+    if not scan_dir or not scan_dir.exists():
+        return []
+
+    results = []
+    for p in sorted(scan_dir.rglob(pattern)):
+        if not p.is_file():
+            continue
+        # Skip SPEC data files and cache files
+        try:
+            if is_specfile(str(p)):
+                continue
+        except Exception:
+            pass
+        if p.name.startswith("."):
+            continue
+        results.append({
+            "path": str(p.relative_to(scan_dir)),
+            "size": p.stat().st_size,
+        })
+    return results
+
+
+def read_file(rel_path: str) -> str:
+    """Read a file from the scan directory.
+
+    Args:
+        rel_path: Path relative to BL_SCAN_DIR.
+
+    Returns:
+        File contents as string.
+
+    Raises:
+        ValueError: If path is outside scan dir or file too large.
+        FileNotFoundError: If file doesn't exist.
+    """
+    scan_dir = bl_config.BL_SCAN_DIR
+    if not scan_dir:
+        raise ValueError("No scan directory configured")
+
+    target = (scan_dir / rel_path).resolve()
+    # Path traversal check
+    try:
+        target.relative_to(scan_dir.resolve())
+    except ValueError:
+        raise ValueError(f"Path is outside scan directory: {rel_path}")
+
+    if not target.is_file():
+        raise FileNotFoundError(f"File not found: {rel_path}")
+
+    if target.stat().st_size > MAX_READ_SIZE:
+        raise ValueError(f"File too large ({target.stat().st_size} bytes, limit {MAX_READ_SIZE})")
+
+    return target.read_text()
+
+
+def write_file(filename: str, content: str) -> str:
+    """Write a file to the scan directory.
+
+    Args:
+        filename: Name only (no subdirectories). Must end in .txt or .mac.
+        content: File contents.
+
+    Returns:
+        The path of the written file relative to scan dir.
+
+    Raises:
+        ValueError: If filename is invalid or path escapes scan dir.
+    """
+    scan_dir = bl_config.BL_SCAN_DIR
+    if not scan_dir:
+        raise ValueError("No scan directory configured")
+
+    # Validate extension
+    if not (filename.endswith(".txt") or filename.endswith(".mac")):
+        raise ValueError("Only .txt and .mac files can be written")
+
+    target = (scan_dir / filename).resolve()
+    try:
+        target.relative_to(scan_dir.resolve())
+    except ValueError:
+        raise ValueError(f"Invalid filename: {filename}")
+
+    target.write_text(content)
+    return str(target.relative_to(scan_dir))
