@@ -24,7 +24,7 @@ SLACK_LLM_CHANNEL_ID = os.getenv("SLACK_LLM_CHANNEL_ID", "")
 SLACK_USERS_CHANNEL_ID = os.getenv("SLACK_USERS_CHANNEL_ID", "")
 
 # App
-BASE_PATH = os.getenv("BASE_PATH", "/beamtimehero")
+BASE_PATH = os.getenv("BASE_PATH", "")
 
 # Tools mode: "mcp" (full tool schemas) or "cli" (progressive discovery)
 TOOLS_MODE = os.getenv("TOOLS_MODE", "cli")

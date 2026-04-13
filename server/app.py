@@ -191,13 +191,20 @@ async def health():
     return {"status": "ok"}
 
 
-@app.get(f"{BASE_PATH}")
-@app.get(f"{BASE_PATH}/")
 async def index():
     return FileResponse(
         STATIC_DIR / "index.html",
         media_type="text/html",
     )
+
+
+# Register index at BASE_PATH (with and without trailing slash).
+# When BASE_PATH is empty, only "/" is registered (FastAPI rejects "").
+if BASE_PATH:
+    app.get(BASE_PATH)(index)
+    app.get(f"{BASE_PATH}/")(index)
+else:
+    app.get("/")(index)
 
 
 @app.post(f"{BASE_PATH}/api/chat")

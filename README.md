@@ -153,7 +153,7 @@ source venv/bin/activate
 python server/app.py
 ```
 
-The app serves at `http://localhost:8080/beamtimehero`.
+The app serves at `http://localhost:8080/`.
 
 ## Environment Variables
 
@@ -167,7 +167,7 @@ The app serves at `http://localhost:8080/beamtimehero`.
 | `SLACK_APP_TOKEN` | No | Slack app-level token (`xapp-...`, for Socket Mode) |
 | `SLACK_LLM_CHANNEL_ID` | No | Slack channel for user-LLM conversation log |
 | `SLACK_USERS_CHANNEL_ID` | No | Slack channel for staff-user communication |
-| `BASE_PATH` | No | URL base path (default: `/beamtimehero`) |
+| `BASE_PATH` | No | URL base path (default: empty, i.e. served at `/`) |
 | `TOOLS_MODE` | No | `cli` (default) or `mcp` |
 
 Slack integration is optional -- without tokens, the app still works as a standalone LLM chat.
