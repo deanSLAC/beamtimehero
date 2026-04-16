@@ -53,12 +53,19 @@
             if (!response.ok) return;
             const data = await response.json();
 
-            data.tools.forEach(function (t) {
-                const li = document.createElement("li");
-                li.innerHTML =
-                    '<span class="tool-name">' + escapeHtml(t.name) + "</span>" +
-                    '<span class="tool-desc">' + escapeHtml(t.description) + "</span>";
-                toolsList.appendChild(li);
+            (data.categories || []).forEach(function (group) {
+                const header = document.createElement("li");
+                header.className = "tool-category";
+                header.textContent = group.category;
+                toolsList.appendChild(header);
+
+                group.tools.forEach(function (t) {
+                    const li = document.createElement("li");
+                    li.innerHTML =
+                        '<span class="tool-name">' + escapeHtml(t.name) + "</span>" +
+                        '<span class="tool-desc">' + escapeHtml(t.description) + "</span>";
+                    toolsList.appendChild(li);
+                });
             });
 
             data.references.forEach(function (r) {

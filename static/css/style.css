@@ -176,6 +176,20 @@ body {
     margin-top: 2px;
 }
 
+.sidebar-list li.tool-category {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ssrl-red);
+    padding: 10px 0 4px;
+    border-bottom: none;
+}
+
+.sidebar-list li.tool-category:first-child {
+    padding-top: 4px;
+}
+
 .panes {
     flex: 1;
     display: flex;

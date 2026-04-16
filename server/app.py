@@ -236,21 +236,73 @@ async def chat(payload: dict):
     return {"response": result.text, "images": result.images}
 
 
+# Sidebar category order + membership. Tools not listed here fall under "Other".
+TOOL_CATEGORIES = [
+    (
+        "Scan Data & Analysis",
+        [
+            "get_latest_scan",
+            "list_scans",
+            "read_scan",
+            "get_active_counter",
+            "get_scan_deadtime",
+            "normalize_scan",
+            "average_scans",
+            "analyze_convergence",
+            "analyze_efficiency",
+        ],
+    ),
+    (
+        "Plots",
+        ["plot_scan", "plot_averaged_scans", "plot_data"],
+    ),
+    (
+        "Beamline Logs",
+        ["get_latest_log_entries", "search_logs", "list_logs"],
+    ),
+    (
+        "Files & Macros",
+        ["list_files", "read_file", "write_summary", "write_macro"],
+    ),
+    (
+        "SPEC Control",
+        ["get_motor_config", "get_counter_config", "spec_command"],
+    ),
+]
+
+
 @app.get(f"{BASE_PATH}/api/tools")
 async def get_tools():
-    """Return available tools and reference docs for the frontend sidebar."""
+    """Return available tools (grouped by category) and reference docs for the frontend sidebar."""
     from tools import TOOL_DEFINITIONS
     from tools.cli import REFERENCE_DOCS
 
-    tools = [
-        {"name": t["function"]["name"], "description": t["function"]["description"]}
-        for t in TOOL_DEFINITIONS
+    by_name = {
+        t["function"]["name"]: t["function"]["description"] for t in TOOL_DEFINITIONS
+    }
+
+    categorized = []
+    seen = set()
+    for category, names in TOOL_CATEGORIES:
+        items = [
+            {"name": n, "description": by_name[n]} for n in names if n in by_name
+        ]
+        seen.update(items_name["name"] for items_name in items)
+        if items:
+            categorized.append({"category": category, "tools": items})
+
+    # Any tool not assigned to a category goes here so nothing is silently hidden.
+    leftover = [
+        {"name": n, "description": d} for n, d in by_name.items() if n not in seen
     ]
+    if leftover:
+        categorized.append({"category": "Other", "tools": leftover})
+
     references = [
         {"name": name, "description": doc["description"]}
         for name, doc in REFERENCE_DOCS.items()
     ]
-    return {"tools": tools, "references": references}
+    return {"categories": categorized, "references": references}
 
 
 @app.post(f"{BASE_PATH}/api/reset")
