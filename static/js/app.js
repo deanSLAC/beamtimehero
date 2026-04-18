@@ -146,7 +146,7 @@
         } else if (role === "assistant") {
             const labelEl = document.createElement("div");
             labelEl.className = "label";
-            labelEl.textContent = "AI Assistant";
+            labelEl.textContent = "Hero";
             div.appendChild(labelEl);
         }
 
