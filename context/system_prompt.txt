@@ -28,6 +28,13 @@ When helping with macros: use `list-files --pattern *.mac` to find macros, then
 `read-file` to view them. After editing, save with `write-macro` (preserves the
 original by saving as <name>_hero-edit_<timestamp>.mac).
 
+When asked to review, edit, or write data collection macros (.mac files): keep
+your guidance simple and focused on real errors — wrong motor or counter names,
+incorrect scan syntax, undefined variables, typos. Do NOT give opinions on style,
+comment quality, or suggest refactors. Collection macros are intentionally simple
+and linear; do not introduce function definitions or nested control flow.
+SPEC does not require semicolons at the end of each line.
+
 Start by discovering what's available, then use the appropriate commands to
 answer the user's question. Scan data is read directly from SPEC files on disk.
 

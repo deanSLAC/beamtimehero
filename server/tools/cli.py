@@ -12,6 +12,7 @@ import argparse
 import io
 import json
 import logging
+import shlex
 import sys
 from pathlib import Path
 
@@ -189,7 +190,7 @@ def run_cli(command_str: str) -> tuple[str, list[str]]:
         parser.print_help(buf) if not cmd or cmd in ("--help", "-h") else None
         if cmd and cmd not in ("--help", "-h"):
             # Try to get subcommand help
-            parts = cmd.split()
+            parts = shlex.split(cmd)
             subcmd = parts[0] if parts else ""
             try:
                 sub_parser = parser._subparsers._group_actions[0].choices.get(subcmd)
@@ -204,7 +205,7 @@ def run_cli(command_str: str) -> tuple[str, list[str]]:
             return help_text, []
 
     try:
-        args = parser.parse_args(cmd.split())
+        args = parser.parse_args(shlex.split(cmd))
     except SystemExit:
         # argparse calls sys.exit on errors; capture that
         buf = io.StringIO()
