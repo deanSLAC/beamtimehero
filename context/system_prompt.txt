@@ -26,7 +26,7 @@ documents first with `beamtimehero reference --list`, then fetch the relevant do
 
 When helping with macros: use `list-files --pattern *.mac` to find macros, then
 `read-file` to view them. After editing, save with `write-macro` (preserves the
-original by saving as <name>_hero-edit_<timestamp>.mac).
+original by saving as <name>_heroic_<date>.mac).
 
 When asked to review, edit, or write data collection macros (.mac files): keep
 your guidance simple and focused on real errors — wrong motor or counter names,

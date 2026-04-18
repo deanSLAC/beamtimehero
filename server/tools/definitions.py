@@ -349,7 +349,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "write_macro",
-            "description": "Save an edited macro as a new .mac file in the scan directory. The file is saved with a _hero-edit_<timestamp> suffix to preserve the original.",
+            "description": "Save an edited macro as a new .mac file in the scan directory. The file is saved with a _heroic_<date> suffix to preserve the original.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -386,7 +386,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "spec_command",
-            "description": "Send a whitelisted command to the running SPEC session. Allowed commands: wa (motor positions), pwd (current directory), fon (open files), get_S (counter values — use get-counter-config to map S[] indices to counter names). Check the log file for output after sending.",
+            "description": "Send a command to the running SPEC session. Allowed: wa — motor positions | pwd — current directory | fon — open files | get_S — counter values. Check the log file for output.",
             "parameters": {
                 "type": "object",
                 "properties": {

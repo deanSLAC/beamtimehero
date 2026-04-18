@@ -216,8 +216,8 @@ def execute_tool(name: str, arguments: dict) -> tuple[str, list[str]]:
             original = arguments.get("original_name", "macro")
             # Strip .mac extension if present to build new name
             base = original.rsplit(".mac", 1)[0] if original.endswith(".mac") else original
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{base}_hero-edit_{ts}.mac"
+            ts = datetime.now().strftime("%Y-%m-%d")
+            filename = f"{base}_heroic_{ts}.mac"
             rel_path = local_data.write_file(filename, arguments.get("content", ""))
             return f"Edited macro saved: {rel_path}", images_b64
 
