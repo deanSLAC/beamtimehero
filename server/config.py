@@ -15,7 +15,7 @@ STATIC_DIR = PROJECT_ROOT / "static"
 # Stanford AI API Gateway
 API_BASE_URL = "https://aiapi-prod.stanford.edu/v1"
 API_KEY = os.getenv("API_KEY", "")
-STANFORD_MODEL = os.getenv("STANFORD_MODEL", "claude-4-5-sonnet")
+STANFORD_MODEL = os.getenv("STANFORD_MODEL", "claude-4-6-opus")
 
 # Slack
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
