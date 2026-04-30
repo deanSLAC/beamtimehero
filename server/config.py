@@ -28,3 +28,11 @@ BASE_PATH = os.getenv("BASE_PATH", "")
 
 # Tools mode: "mcp" (full tool schemas) or "cli" (progressive discovery)
 TOOLS_MODE = os.getenv("TOOLS_MODE", "cli")
+
+# MLflow tracing
+MLFLOW_ENABLED = os.getenv("MLFLOW_ENABLED", "0") == "1"
+MLFLOW_TRACKING_URI = os.getenv(
+    "MLFLOW_TRACKING_URI",
+    "https://isaac.slac.stanford.edu/mlflow/api/external",
+)
+MLFLOW_TOKEN = os.getenv("MLFLOW_TRACKING_TOKEN", "")

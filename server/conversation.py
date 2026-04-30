@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass, field
+
+import bl_config
 
 from api_client import StanfordAPIClient
 from config import TOOLS_MODE
+from mlflow_logging import run as mlflow_run, decode_b64_png
 from tools import TOOL_DEFINITIONS, CLI_TOOL_DEFINITION
 from tools.executor import execute_tool
 from tools.cli import run_cli
@@ -62,55 +66,147 @@ class ConversationService:
             return run_cli(tool_args.get("command", ""))
         return execute_tool(tool_name, tool_args)
 
-    def _run_tool_loop(self, messages: list[dict]) -> ConversationResult:
+    def _run_tool_loop(
+        self,
+        messages: list[dict],
+        *,
+        source: str = "web",
+        staff_name: str | None = None,
+        user_text_preview: str | None = None,
+    ) -> ConversationResult:
         """Run the LLM request with a multi-round tool loop.
 
         Args:
             messages: Conversation messages (without system message).
+            source: One of "web", "slack_llm_thread", "slack_dm" for MLflow tagging.
+            staff_name: Slack staff display name when source != "web".
+            user_text_preview: First ~200 chars of the user message for MLflow tag.
         """
         tools = self._get_tool_definitions()
         all_images: list[str] = []
 
-        result = self.client.chat_completion(messages, tools=tools)
-        assistant_msg = result["choices"][0]["message"]
-        tool_calls = assistant_msg.get("tool_calls")
+        with mlflow_run(
+            experiment="bth/chat",
+            run_name=f"turn-{int(time.time())}",
+            source=source,
+        ) as r:
+            tool_round = 0
+            tool_call_count = 0
+            per_tool_counts: dict[str, int] = {}
+            tool_calls_log: list[dict] = []
+            usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            llm_latency_seconds = 0.0
+            error_flag = 0
+            response_text = ""
 
-        tool_round = 0
-        # Build API message history for tool rounds (includes system msg from client)
-        api_messages = messages.copy()
+            def _accumulate_usage(api_result: dict) -> None:
+                usage = api_result.get("usage") or {}
+                for k in usage_total:
+                    try:
+                        usage_total[k] += int(usage.get(k, 0) or 0)
+                    except (TypeError, ValueError):
+                        pass
 
-        while tool_calls and tool_round < MAX_TOOL_ROUNDS:
-            tool_round += 1
-            api_messages.append(assistant_msg)
+            try:
+                t0 = time.perf_counter()
+                result = self.client.chat_completion(messages, tools=tools)
+                llm_latency_seconds += time.perf_counter() - t0
+                _accumulate_usage(result)
+                assistant_msg = result["choices"][0]["message"]
+                tool_calls = assistant_msg.get("tool_calls")
 
-            for tool_call in tool_calls:
-                func = tool_call["function"]
-                tool_name = func["name"]
-                raw_args = func["arguments"]
-                tool_args = (
-                    json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-                )
+                # Build API message history for tool rounds (includes system msg from client)
+                api_messages = messages.copy()
 
-                logger.info("Tool call: %s(%s)", tool_name, tool_args)
-                tool_result, images_b64 = self._execute_tool_call(tool_name, tool_args)
-                all_images.extend(images_b64)
+                while tool_calls and tool_round < MAX_TOOL_ROUNDS:
+                    tool_round += 1
+                    api_messages.append(assistant_msg)
 
-                api_messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call["id"],
-                    "content": tool_result,
-                })
+                    for tool_call in tool_calls:
+                        func = tool_call["function"]
+                        tool_name = func["name"]
+                        raw_args = func["arguments"]
+                        tool_args = (
+                            json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                        )
 
-            result = self.client.chat_completion(
-                api_messages, include_context=False, tools=tools
-            )
-            assistant_msg = result["choices"][0]["message"]
-            tool_calls = assistant_msg.get("tool_calls")
+                        logger.info("Tool call: %s(%s)", tool_name, tool_args)
+                        tool_result, images_b64 = self._execute_tool_call(tool_name, tool_args)
+                        all_images.extend(images_b64)
 
-        response_text = assistant_msg.get("content", "")
-        return ConversationResult(text=response_text, images=all_images)
+                        tool_call_count += 1
+                        per_tool_counts[tool_name] = per_tool_counts.get(tool_name, 0) + 1
+                        result_str = tool_result if isinstance(tool_result, str) else str(tool_result)
+                        tool_calls_log.append({
+                            "round": tool_round,
+                            "name": tool_name,
+                            "args": tool_args,
+                            "result_preview": result_str[:2048],
+                            "result_size": len(result_str),
+                        })
 
-    def handle_message(self, user_text: str) -> ConversationResult:
+                        api_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call["id"],
+                            "content": tool_result,
+                        })
+
+                    t0 = time.perf_counter()
+                    result = self.client.chat_completion(
+                        api_messages, include_context=False, tools=tools
+                    )
+                    llm_latency_seconds += time.perf_counter() - t0
+                    _accumulate_usage(result)
+                    assistant_msg = result["choices"][0]["message"]
+                    tool_calls = assistant_msg.get("tool_calls")
+
+                response_text = assistant_msg.get("content", "")
+            except Exception:
+                error_flag = 1
+                raise
+            finally:
+                if r is not None:
+                    try:
+                        import mlflow
+
+                        mlflow.log_param("model", self.client.model)
+                        mlflow.log_param("tools_mode", TOOLS_MODE)
+                        mlflow.log_param("scan_dir", str(bl_config.BL_SCAN_DIR))
+                        mlflow.log_param("backend", "bth")
+                        mlflow.log_param("source", source)
+                        if staff_name:
+                            mlflow.log_param("staff_name", staff_name)
+
+                        mlflow.log_metric("tool_round_count", tool_round)
+                        mlflow.log_metric("tool_call_count", tool_call_count)
+                        mlflow.log_metric("images_generated", len(all_images))
+                        mlflow.log_metric("prompt_tokens", usage_total["prompt_tokens"])
+                        mlflow.log_metric("completion_tokens", usage_total["completion_tokens"])
+                        mlflow.log_metric("total_tokens", usage_total["total_tokens"])
+                        mlflow.log_metric("llm_latency_seconds", llm_latency_seconds)
+                        mlflow.log_metric("error", error_flag)
+
+                        mlflow.set_tag("scan_dir", str(bl_config.BL_SCAN_DIR))
+                        for name_, n in per_tool_counts.items():
+                            mlflow.set_tag(f"tool:{name_}", str(n))
+                        if user_text_preview:
+                            mlflow.set_tag("user_text_preview", user_text_preview[:200])
+                            mlflow.log_text(user_text_preview, "user_message.txt")
+                        mlflow.log_text(response_text or "", "assistant_response.md")
+                        mlflow.log_dict({"calls": tool_calls_log}, "tool_calls.json")
+                        for i, b64 in enumerate(all_images):
+                            try:
+                                mlflow.log_image(decode_b64_png(b64), f"plots/plot_{i}.png")
+                            except Exception:
+                                logger.warning("MLflow log_image failed for plot %d", i, exc_info=True)
+                    except Exception:
+                        logger.warning("MLflow logging failed in chat seam", exc_info=True)
+
+            return ConversationResult(text=response_text, images=all_images)
+
+    def handle_message(
+        self, user_text: str, source: str = "web"
+    ) -> ConversationResult:
         """Process a user message through the LLM.
 
         Any buffered staff messages are prepended as context.
@@ -128,7 +224,11 @@ class ConversationService:
                 {"role": m["role"], "content": m["content"]}
                 for m in self.messages
             ]
-            result = self._run_tool_loop(api_messages)
+            result = self._run_tool_loop(
+                api_messages,
+                source=source,
+                user_text_preview=user_text[:200],
+            )
         except Exception as e:
             logger.error("Chat response error: %s", e, exc_info=True)
             result = ConversationResult(text=f"Error: {e}")
@@ -141,7 +241,12 @@ class ConversationService:
 
         return result
 
-    def handle_staff_llm(self, staff_text: str, staff_name: str = "Staff") -> ConversationResult:
+    def handle_staff_llm(
+        self,
+        staff_text: str,
+        staff_name: str = "Staff",
+        source: str = "slack_llm_thread",
+    ) -> ConversationResult:
         """Route a staff !LLM message directly to the LLM."""
         content = f"[Staff member {staff_name}]: {staff_text}"
         self.messages.append({"role": "user", "content": content})
@@ -151,7 +256,12 @@ class ConversationService:
                 {"role": m["role"], "content": m["content"]}
                 for m in self.messages
             ]
-            result = self._run_tool_loop(api_messages)
+            result = self._run_tool_loop(
+                api_messages,
+                source=source,
+                staff_name=staff_name,
+                user_text_preview=staff_text[:200],
+            )
         except Exception as e:
             logger.error("Chat response error: %s", e, exc_info=True)
             result = ConversationResult(text=f"Error: {e}")

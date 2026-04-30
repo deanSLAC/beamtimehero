@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).parent))
 
 import re
+import time
 from datetime import datetime
 
 import requests
@@ -30,6 +31,7 @@ from config import BASE_PATH, STATIC_DIR, API_KEY, API_BASE_URL, PROJECT_ROOT
 sys.path.insert(0, str(Path(__file__).parent.parent / "beamline_lib"))
 from api_client import StanfordAPIClient
 from conversation import ConversationService
+from mlflow_logging import run as mlflow_run
 from slack_bridge import SlackBridge
 
 logging.basicConfig(
@@ -83,7 +85,7 @@ def on_llm_thread_reply(text: str, staff_name: str):
     _broadcast({"type": "staff_in_llm", "name": staff_name, "text": text})
 
     if conversation:
-        result = conversation.handle_staff_llm(text, staff_name)
+        result = conversation.handle_staff_llm(text, staff_name, source="slack_llm_thread")
         _broadcast({
             "type": "assistant",
             "text": result.text,
@@ -114,7 +116,7 @@ def on_dm_message(text: str, staff_name: str, dm_thread_key: str):
     dm_conversation = _dm_conversations[dm_thread_key]
 
     try:
-        result = dm_conversation.handle_staff_llm(text, staff_name)
+        result = dm_conversation.handle_staff_llm(text, staff_name, source="slack_dm")
     except Exception as e:
         logger.error("DM conversation error: %s", e, exc_info=True)
         result_text = f"Error: {e}"
@@ -228,7 +230,7 @@ async def chat(payload: dict):
     slack_bridge.post_user_message(user_text)
 
     # Get LLM response
-    result = conversation.handle_message(user_text)
+    result = conversation.handle_message(user_text, source="web")
 
     # Forward LLM response to Slack
     slack_bridge.post_llm_response(result.text)
@@ -358,28 +360,50 @@ async def submit_suggestion(payload: dict):
         {"role": "user", "content": raw_text},
     ]
 
-    try:
-        client = StanfordAPIClient()
-        url = f"{API_BASE_URL}/chat/completions"
-        req_payload = {
-            "model": client.model,
-            "messages": messages,
-            "temperature": 0.1,
-        }
-        response = requests.post(
-            url, headers=client._get_headers(), json=req_payload, timeout=60
-        )
-        response.raise_for_status()
-        result = response.json()
-        content = result["choices"][0]["message"]["content"]
+    with mlflow_run(
+        experiment="bth/suggestions",
+        run_name=f"suggestion-{int(time.time())}",
+    ) as r:
+        t0 = time.perf_counter()
+        try:
+            client = StanfordAPIClient()
+            url = f"{API_BASE_URL}/chat/completions"
+            req_payload = {
+                "model": client.model,
+                "messages": messages,
+                "temperature": 0.1,
+            }
+            response = requests.post(
+                url, headers=client._get_headers(), json=req_payload, timeout=60
+            )
+            response.raise_for_status()
+            result = response.json()
+            content = result["choices"][0]["message"]["content"]
 
-        # Strip markdown fences if present
-        content = re.sub(r"^```json\s*", "", content.strip())
-        content = re.sub(r"\s*```$", "", content.strip())
-        parsed = json.loads(content)
-    except Exception as e:
-        logger.error("Suggestion classification failed: %s", e, exc_info=True)
-        return JSONResponse({"error": "Failed to classify suggestion"}, status_code=500)
+            # Strip markdown fences if present
+            content = re.sub(r"^```json\s*", "", content.strip())
+            content = re.sub(r"\s*```$", "", content.strip())
+            parsed = json.loads(content)
+        except Exception as e:
+            logger.error("Suggestion classification failed: %s", e, exc_info=True)
+            return JSONResponse({"error": "Failed to classify suggestion"}, status_code=500)
+
+        if r is not None:
+            try:
+                import mlflow
+
+                mlflow.log_param("model", client.model)
+                mlflow.log_param("classifier", "true")
+                mlflow.log_metric("valid", int(parsed.get("valid", 0) or 0))
+                mlflow.log_metric("latency_seconds", time.perf_counter() - t0)
+                usage = (result.get("usage") or {})
+                for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                    mlflow.log_metric(k, int(usage.get(k, 0) or 0))
+                mlflow.set_tag("summary_3word", parsed.get("summary_3word", ""))
+                mlflow.log_text(raw_text, "raw_suggestion.txt")
+                mlflow.log_dict(parsed, "classification.json")
+            except Exception:
+                logger.warning("MLflow logging failed in suggestions seam", exc_info=True)
 
     # Save to disk
     suggestions_dir = PROJECT_ROOT / "user_suggestions"
