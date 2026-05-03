@@ -9,7 +9,7 @@ from pathlib import Path
 
 import requests
 
-from config import API_BASE_URL, API_KEY, STANFORD_MODEL, CONTEXT_DIR, TOOLS_MODE
+from config import API_BASE_URL, API_KEY, STANFORD_MODEL, CONTEXT_DIR
 from tools.cli import ALWAYS_IN_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -35,11 +35,10 @@ class StanfordAPIClient:
         }
 
     def _load_context_files(self) -> str:
-        """Load .txt files from the context directory.
+        """Load small context .txt files into the system prompt.
 
-        In CLI tools mode, large reference docs are excluded from the system
-        prompt (served on-demand via 'beamtimehero reference' instead).
-        In MCP mode, all context files are included.
+        Large reference docs are excluded — they're served on-demand via
+        `beamtimehero reference …`. The keep-list is `ALWAYS_IN_PROMPT`.
         """
         context_parts = []
 
@@ -47,8 +46,7 @@ class StanfordAPIClient:
             for txt_file in sorted(CONTEXT_DIR.glob("*.txt")):
                 if txt_file.name == "system_prompt.txt":
                     continue
-                # In CLI mode, skip files that aren't in the always-include set
-                if TOOLS_MODE == "cli" and txt_file.name not in ALWAYS_IN_PROMPT:
+                if txt_file.name not in ALWAYS_IN_PROMPT:
                     continue
                 try:
                     content = txt_file.read_text().strip()

@@ -68,13 +68,9 @@ The LLM has access to 22 beamline tools:
 | `get_counter_config` | Counter configuration from SPEC config file |
 | `spec_command` | Send whitelisted commands to the running SPEC session (wa, pwd, fon, get_S) |
 
-### Two Tool Modes
+### Tool Discovery
 
-Set `TOOLS_MODE` to choose how tools are presented to the LLM:
-
-- **`cli`** (default) -- A single `run_command` tool is defined. The LLM discovers available commands progressively via `beamtimehero --help`. Large reference documents are served on-demand instead of in the system prompt.
-
-- **`mcp`** -- All tool schemas are included in every API request via native function-calling. All context documents are loaded into the system prompt.
+The LLM sees a single `run_command` tool. It discovers available commands progressively via `beamtimehero --help`, and looks up large reference documents on-demand via `beamtimehero reference <doc>` -- keeping the system prompt small.
 
 ## Slack Integration
 
@@ -104,7 +100,7 @@ server/               Python FastAPI backend
   slack_bridge.py     Three-channel Slack bridge + !setdir + staff DMs
   config.py           App configuration (API keys, paths, modes)
   tools/              Tool system
-    definitions.py    MCP tool schemas + CLI tool definition
+    definitions.py    CLI tool schema + sidebar descriptions
     executor.py       Tool dispatch (calls blmcp.tools + file/spec tools)
     cli.py            Argparse CLI for progressive discovery mode
 static/               Plain JavaScript frontend
@@ -168,6 +164,5 @@ The app serves at `http://localhost:8080/`.
 | `SLACK_LLM_CHANNEL_ID` | No | Slack channel for user-LLM conversation log |
 | `SLACK_USERS_CHANNEL_ID` | No | Slack channel for staff-user communication |
 | `BASE_PATH` | No | URL base path (default: empty, i.e. served at `/`) |
-| `TOOLS_MODE` | No | `cli` (default) or `mcp` |
 
 Slack integration is optional -- without tokens, the app still works as a standalone LLM chat.

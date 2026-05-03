@@ -276,12 +276,10 @@ TOOL_CATEGORIES = [
 @app.get(f"{BASE_PATH}/api/tools")
 async def get_tools():
     """Return available tools (grouped by category) and reference docs for the frontend sidebar."""
-    from tools import TOOL_DEFINITIONS
+    from tools import TOOL_DESCRIPTIONS
     from tools.cli import REFERENCE_DOCS
 
-    by_name = {
-        t["function"]["name"]: t["function"]["description"] for t in TOOL_DEFINITIONS
-    }
+    by_name = TOOL_DESCRIPTIONS
 
     categorized = []
     seen = set()

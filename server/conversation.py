@@ -1,9 +1,8 @@
 """Conversation service for BeamtimeHero.
 
-Manages message history and LLM interaction with tool-use support.
-Supports two tool modes:
-- MCP: Native function-calling with full tool schemas
-- CLI: Single run_command tool with progressive discovery
+Manages message history and LLM interaction. The LLM sees a single
+`run_command` tool and drives the `beamtimehero` argparse CLI for discovery
+and execution.
 """
 from __future__ import annotations
 
@@ -15,10 +14,8 @@ from dataclasses import dataclass, field
 import bl_config
 
 from api_client import StanfordAPIClient
-from config import TOOLS_MODE
 from mlflow_logging import run as mlflow_run, decode_b64_png
-from tools import TOOL_DEFINITIONS, CLI_TOOL_DEFINITION
-from tools.executor import execute_tool
+from tools import CLI_TOOL_DEFINITION
 from tools.cli import run_cli
 
 logger = logging.getLogger(__name__)
@@ -49,22 +46,13 @@ class ConversationService:
         self._staff_buffer.clear()
         return context
 
-    def _get_tool_definitions(self) -> list[dict]:
-        """Return tool definitions based on configured mode."""
-        if TOOLS_MODE == "cli":
-            return CLI_TOOL_DEFINITION
-        return TOOL_DEFINITIONS
-
     def _execute_tool_call(
         self, tool_name: str, tool_args: dict
     ) -> tuple[str, list[str]]:
-        """Execute a single tool call, routing by mode.
-
-        Returns (result_text, images_b64).
-        """
-        if TOOLS_MODE == "cli" and tool_name == "run_command":
-            return run_cli(tool_args.get("command", ""))
-        return execute_tool(tool_name, tool_args)
+        """Execute a tool call. Only `run_command` is exposed to the LLM."""
+        if tool_name != "run_command":
+            return f"Unknown tool: {tool_name}. Use 'run_command' with a beamtimehero CLI string.", []
+        return run_cli(tool_args.get("command", ""))
 
     def _run_tool_loop(
         self,
@@ -82,7 +70,7 @@ class ConversationService:
             staff_name: Slack staff display name when source != "web".
             user_text_preview: First ~200 chars of the user message for MLflow tag.
         """
-        tools = self._get_tool_definitions()
+        tools = CLI_TOOL_DEFINITION
         all_images: list[str] = []
 
         with mlflow_run(
@@ -170,7 +158,6 @@ class ConversationService:
                         import mlflow
 
                         mlflow.log_param("model", self.client.model)
-                        mlflow.log_param("tools_mode", TOOLS_MODE)
                         mlflow.log_param("scan_dir", str(bl_config.BL_SCAN_DIR))
                         mlflow.log_param("backend", "bth")
                         mlflow.log_param("source", source)
