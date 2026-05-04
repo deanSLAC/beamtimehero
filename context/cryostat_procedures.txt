@@ -36,7 +36,7 @@ First, If the rod gets stuck, do not force it.  If possible, insert the rod back
 
 How to recover: The cryostat needs to be warmed to 85 Kelvin to ensure all nitrogen has been boiled off.
 
-Situation 1: Rod is stuck part way - The plan is to get the rod back in all the way. 
+Situation 1: Rod is stuck part way - The plan is to get the rod back in all the way first, then warm up to remove it.
 1. Make sure the sample space valve is open
 2. Since the cryogenic sample space is still being exposed to room temperature air in this state, flow helium purge gas (make sure the sample space valve is open) to reduce further ice build up. 
 3. Warm the cryostat. Fully close the LHe needle valve (clockwise) to stop cooling the cryostat. Turn on the cryostat heater (instructions below).
