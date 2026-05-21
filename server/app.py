@@ -1,6 +1,7 @@
 """BeamtimeHero — FastAPI application.
 
-Web chat interface for synchrotron beamline users with LLM + Slack staff bridge.
+Web chat interface for synchrotron beamline users with LLM (via
+`claude -p --resume`) + Slack staff bridge.
 """
 from __future__ import annotations
 
@@ -22,16 +23,18 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import re
-import time
 from datetime import datetime
 
-import requests
+from config import BASE_PATH, STATIC_DIR, PROJECT_ROOT, CLAUDE_BIN, llm_configured
 
-from config import BASE_PATH, STATIC_DIR, API_KEY, API_BASE_URL, PROJECT_ROOT
+# Set BTH env defaults (SPEC_MOCK=0, SPEC_TRANSPORT=screen,
+# BEAMTIMEHERO_DATA_DIR) before any subprocess is spawned. The `claude -p`
+# subprocess inherits os.environ, and the upstream CLI reads these at
+# import time.
+import beamline_tools.config  # noqa: F401
 
-from api_client import StanfordAPIClient
+from claude_cli_backend import ClaudeCLIClient
 from conversation import ConversationService
-from mlflow_logging import run as mlflow_run
 from slack_bridge import SlackBridge
 
 logging.basicConfig(
@@ -42,9 +45,14 @@ logger = logging.getLogger(__name__)
 
 # --- Global state ---
 slack_bridge = SlackBridge()
+claude_client = ClaudeCLIClient()
 conversation: ConversationService | None = None
 connected_ws: set[WebSocket] = set()
 _event_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _new_conversation() -> ConversationService:
+    return ConversationService(client=claude_client)
 
 
 async def broadcast_ws(message: dict):
@@ -81,7 +89,6 @@ def on_llm_thread_reply(text: str, staff_name: str):
     Staff message joins the LLM conversation — displayed in the AI pane,
     routed to the LLM, and response posted back to Slack.
     """
-    # Show staff message in the AI Assistant pane (part of that conversation)
     _broadcast({"type": "staff_in_llm", "name": staff_name, "text": text})
 
     if conversation:
@@ -103,14 +110,11 @@ def on_dm_message(text: str, staff_name: str, dm_thread_key: str):
 
     Each DM thread gets its own conversation session.
     """
-    global _dm_conversations
-
     if dm_thread_key not in _dm_conversations:
-        if not API_KEY:
-            logger.warning("Cannot handle DM: API_KEY not configured")
+        if not llm_configured():
+            logger.warning("Cannot handle DM: gateway not configured")
             return
-        client = StanfordAPIClient()
-        _dm_conversations[dm_thread_key] = ConversationService(client)
+        _dm_conversations[dm_thread_key] = _new_conversation()
         logger.info("New DM conversation for %s (key: %s)", staff_name, dm_thread_key)
 
     dm_conversation = _dm_conversations[dm_thread_key]
@@ -141,10 +145,13 @@ def on_setdir(dir_name: str) -> str:
     bl_config.set_scan_dir(dir_name)
     bl_local_data.clear_cache()
 
+    # Subprocess invocations of `claude -p` re-read BL_SCAN_DIR from env;
+    # publish the new value so the next turn's tool calls see it.
+    os.environ["BL_SCAN_DIR"] = str(bl_config.get_scan_dir())
+
     # Reset conversation (same as browser reset)
-    if API_KEY:
-        client = StanfordAPIClient()
-        conversation = ConversationService(client)
+    if llm_configured():
+        conversation = _new_conversation()
     slack_bridge.reset_thread()
 
     return f"Scan directory set to `{bl_config.get_scan_dir()}`. Conversation reset."
@@ -159,13 +166,19 @@ async def lifespan(app: FastAPI):
     _event_loop = asyncio.get_running_loop()
 
     # Initialize conversation service
-    if API_KEY:
+    if llm_configured():
+        if not claude_client.health_check():
+            logger.error(
+                "`claude` binary not callable at %r — set CLAUDE_BIN or install Claude Code",
+                CLAUDE_BIN,
+            )
         try:
-            client = StanfordAPIClient()
-            conversation = ConversationService(client)
-            logger.info("LLM conversation service initialized")
+            conversation = _new_conversation()
+            logger.info("LLM conversation service initialized (session=%s)", conversation.session_id)
         except Exception as e:
-            logger.error("Failed to initialize LLM client: %s", e)
+            logger.error("Failed to initialize conversation service: %s", e)
+    else:
+        logger.warning("LLM_GATEWAY not configured (no API key for selected gateway)")
 
     # Start Slack bridge
     slack_bridge.set_staff_callback(on_staff_message)
@@ -190,7 +203,11 @@ app.mount(
 
 @app.get(f"{BASE_PATH}/health")
 async def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "llm_configured": llm_configured(),
+        "claude_binary": claude_client.health_check(),
+    }
 
 
 async def index():
@@ -219,12 +236,11 @@ async def chat(payload: dict):
         return JSONResponse({"error": "Empty message"}, status_code=400)
 
     if not conversation:
-        if not API_KEY:
+        if not llm_configured():
             return JSONResponse(
-                {"error": "API_KEY not configured"}, status_code=503
+                {"error": "LLM gateway not configured"}, status_code=503
             )
-        client = StanfordAPIClient()
-        conversation = ConversationService(client)
+        conversation = _new_conversation()
 
     # Forward user message to Slack
     slack_bridge.post_user_message(user_text)
@@ -323,9 +339,8 @@ async def reset():
     """Reset the conversation."""
     global conversation
 
-    if API_KEY:
-        client = StanfordAPIClient()
-        conversation = ConversationService(client)
+    if llm_configured():
+        conversation = _new_conversation()
 
     slack_bridge.reset_thread()
     return {"status": "reset"}
@@ -349,93 +364,36 @@ async def staff_message(payload: dict):
 
 @app.post(f"{BASE_PATH}/api/suggestion")
 async def submit_suggestion(payload: dict):
-    """Accept an LLM upgrade suggestion, classify it via LLM, and save."""
+    """Save a user-submitted suggestion for improving the AI assistant.
+
+    No LLM classification — filename slug is the first 3 alphanumeric words,
+    `valid` is 1 unless the text is empty or trivially short.
+    """
     raw_text = payload.get("suggestion", "").strip()
     if not raw_text:
         return JSONResponse({"error": "Empty suggestion"}, status_code=400)
 
-    if not API_KEY:
-        return JSONResponse({"error": "API_KEY not configured"}, status_code=503)
+    words = re.findall(r"[a-z0-9]+", raw_text.lower())[:3]
+    three_word = "_".join(words) or "suggestion"
+    three_word = three_word[:30]
+    valid = 1 if len(raw_text) >= 10 else 0
 
-    classification_prompt = (
-        "You are a classifier. The user has submitted a suggestion for improving an AI assistant. "
-        "Analyze the suggestion and return ONLY valid JSON with these fields:\n"
-        '- "summary_3word": a 3-word summary (lowercase, underscores instead of spaces)\n'
-        '- "summary_2sentence": a 2-sentence summary (include ONLY if the suggestion is longer than 5 sentences, otherwise set to null)\n'
-        '- "valid": 1 if this is a genuine, actionable suggestion, 0 if it is blank, gibberish, a single character, or not a real suggestion\n'
-        "Return ONLY the JSON object, no markdown fencing."
-    )
-
-    messages = [
-        {"role": "system", "content": classification_prompt},
-        {"role": "user", "content": raw_text},
-    ]
-
-    with mlflow_run(
-        experiment="bth/suggestions",
-        run_name=f"suggestion-{int(time.time())}",
-    ) as r:
-        t0 = time.perf_counter()
-        try:
-            client = StanfordAPIClient()
-            url = f"{API_BASE_URL}/chat/completions"
-            req_payload = {
-                "model": client.model,
-                "messages": messages,
-                "temperature": 0.1,
-            }
-            response = requests.post(
-                url, headers=client._get_headers(), json=req_payload, timeout=60
-            )
-            response.raise_for_status()
-            result = response.json()
-            content = result["choices"][0]["message"]["content"]
-
-            # Strip markdown fences if present
-            content = re.sub(r"^```json\s*", "", content.strip())
-            content = re.sub(r"\s*```$", "", content.strip())
-            parsed = json.loads(content)
-        except Exception as e:
-            logger.error("Suggestion classification failed: %s", e, exc_info=True)
-            return JSONResponse({"error": "Failed to classify suggestion"}, status_code=500)
-
-        if r is not None:
-            try:
-                import mlflow
-
-                mlflow.log_param("model", client.model)
-                mlflow.log_param("classifier", "true")
-                mlflow.log_metric("valid", int(parsed.get("valid", 0) or 0))
-                mlflow.log_metric("latency_seconds", time.perf_counter() - t0)
-                usage = (result.get("usage") or {})
-                for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
-                    mlflow.log_metric(k, int(usage.get(k, 0) or 0))
-                mlflow.set_tag("summary_3word", parsed.get("summary_3word", ""))
-                mlflow.log_text(raw_text, "raw_suggestion.txt")
-                mlflow.log_dict(parsed, "classification.json")
-            except Exception:
-                logger.warning("MLflow logging failed in suggestions seam", exc_info=True)
-
-    # Save to disk
     suggestions_dir = PROJECT_ROOT / "user_suggestions"
     suggestions_dir.mkdir(exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    three_word = parsed.get("summary_3word", "unknown")
-    three_word = re.sub(r"[^a-z0-9_]", "", three_word.lower().replace(" ", "_"))[:30]
     filename = f"suggestion_{three_word}_{timestamp}.json"
 
     record = {
         "timestamp": datetime.now().isoformat(),
         "raw_suggestion": raw_text,
-        "summary_2sentence": parsed.get("summary_2sentence"),
-        "valid": parsed.get("valid", 0),
+        "valid": valid,
     }
 
     (suggestions_dir / filename).write_text(json.dumps(record, indent=2))
-    logger.info("Saved suggestion: %s (valid=%s)", filename, record["valid"])
+    logger.info("Saved suggestion: %s (valid=%s)", filename, valid)
 
-    return {"status": "saved", "summary": three_word, "valid": record["valid"]}
+    return {"status": "saved", "summary": three_word, "valid": valid}
 
 
 @app.websocket(f"{BASE_PATH}/ws")

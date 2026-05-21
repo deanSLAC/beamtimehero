@@ -1,12 +1,10 @@
-"""Tool definitions for BeamtimeHero.
-
-CLI_TOOL_DEFINITION: the single `run_command` tool sent to the LLM. The
-model discovers actual capabilities by walking `beamtimehero bth --help`
-and friends.
+"""Tool descriptions for the BeamtimeHero frontend sidebar.
 
 TOOL_DESCRIPTIONS: snake_case name → one-line description, derived from
-upstream's `TOOL_DEFINITIONS` filtered through the bth allowlist. Used
-only by the frontend sidebar.
+upstream's `TOOL_DEFINITIONS` filtered through the bth allowlist. The
+agent itself discovers and invokes tools via Bash against
+`./scripts/beamtimehero bth …` — see `.claude/agents/beamline-bth.md`.
+This map is read-only metadata for the UI.
 """
 from __future__ import annotations
 
@@ -28,32 +26,3 @@ def _build_descriptions() -> dict[str, str]:
 
 
 TOOL_DESCRIPTIONS: dict[str, str] = _build_descriptions()
-
-CLI_TOOL_DEFINITION = [
-    {
-        "type": "function",
-        "function": {
-            "name": "run_command",
-            "description": (
-                "Run a `beamtimehero bth ...` CLI command. "
-                "Start with `beamtimehero bth --help` to see the subtrees "
-                "(ref, tool, spec-read). Then `beamtimehero bth <subtree> "
-                "--help` for the available commands, and `beamtimehero bth "
-                "<subtree> <command> --help` for the flags."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": (
-                            "The full CLI command string to execute (e.g. "
-                            "'beamtimehero bth tool list-scans --limit 5')"
-                        ),
-                    }
-                },
-                "required": ["command"],
-            },
-        },
-    },
-]
