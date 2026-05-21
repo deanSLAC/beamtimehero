@@ -11,7 +11,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 
-import bl_config
+from beamline_tools import config as bl_config
 
 from api_client import StanfordAPIClient
 from mlflow_logging import run as mlflow_run, decode_b64_png
@@ -158,7 +158,7 @@ class ConversationService:
                         import mlflow
 
                         mlflow.log_param("model", self.client.model)
-                        mlflow.log_param("scan_dir", str(bl_config.BL_SCAN_DIR))
+                        mlflow.log_param("scan_dir", str(bl_config.get_scan_dir()))
                         mlflow.log_param("backend", "bth")
                         mlflow.log_param("source", source)
                         if staff_name:
@@ -173,7 +173,7 @@ class ConversationService:
                         mlflow.log_metric("llm_latency_seconds", llm_latency_seconds)
                         mlflow.log_metric("error", error_flag)
 
-                        mlflow.set_tag("scan_dir", str(bl_config.BL_SCAN_DIR))
+                        mlflow.set_tag("scan_dir", str(bl_config.get_scan_dir()))
                         for name_, n in per_tool_counts.items():
                             mlflow.set_tag(f"tool:{name_}", str(n))
                         if user_text_preview:

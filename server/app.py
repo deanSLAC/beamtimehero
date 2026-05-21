@@ -16,8 +16,10 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-# Add server/ to path for sibling imports
+# Add server/ to path for sibling imports, and project root so
+# `beamline_tools` is importable.
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import re
 import time
@@ -27,8 +29,6 @@ import requests
 
 from config import BASE_PATH, STATIC_DIR, API_KEY, API_BASE_URL, PROJECT_ROOT
 
-# Add beamline_lib so blmcp / bldata_analysis / db_connection are importable
-sys.path.insert(0, str(Path(__file__).parent.parent / "beamline_lib"))
 from api_client import StanfordAPIClient
 from conversation import ConversationService
 from mlflow_logging import run as mlflow_run
@@ -135,11 +135,11 @@ def on_setdir(dir_name: str) -> str:
     """
     global conversation
 
-    import bl_config
-    from local_data import clear_cache
+    from beamline_tools import config as bl_config
+    from beamtimehero_cli.spec_data import local_data as bl_local_data
 
     bl_config.set_scan_dir(dir_name)
-    clear_cache()
+    bl_local_data.clear_cache()
 
     # Reset conversation (same as browser reset)
     if API_KEY:
@@ -147,7 +147,7 @@ def on_setdir(dir_name: str) -> str:
         conversation = ConversationService(client)
     slack_bridge.reset_thread()
 
-    return f"Scan directory set to `{bl_config.BL_SCAN_DIR}`. Conversation reset."
+    return f"Scan directory set to `{bl_config.get_scan_dir()}`. Conversation reset."
 
 
 @asynccontextmanager
@@ -243,20 +243,21 @@ TOOL_CATEGORIES = [
     (
         "Scan Data & Analysis",
         [
-            "get_latest_scan",
-            "list_scans",
-            "read_scan",
-            "get_active_counter",
-            "get_scan_deadtime",
-            "normalize_scan",
-            "average_scans",
-            "analyze_convergence",
-            "analyze_efficiency",
+            "get_latest_scan", "list_scans", "read_scan",
+            "get_active_counter", "get_scan_deadtime",
+            "normalize_scan", "average_scans",
+            "analyze_convergence", "analyze_efficiency",
+            "analyze_feature_evolution", "analyze_per_spot",
+            "group_scans_by_spot",
         ],
     ),
     (
         "Plots",
-        ["plot_scan", "plot_averaged_scans", "plot_data"],
+        [
+            "plot_scan", "plot_averaged_scans", "plot_data",
+            "plot_scan_stack", "plot_first_half_vs_second_half",
+            "plot_running_average", "plot_feature_evolution",
+        ],
     ),
     (
         "Beamline Logs",
@@ -264,11 +265,21 @@ TOOL_CATEGORIES = [
     ),
     (
         "Files & Macros",
-        ["list_files", "read_file", "write_summary", "write_macro"],
+        [
+            "list_files", "read_file", "write_summary",
+            "write_macro", "evaluate_spec_macro", "save_plan",
+        ],
     ),
     (
-        "SPEC Control",
-        ["get_motor_config", "get_counter_config", "spec_command"],
+        "SPEC State (read-only)",
+        [
+            "get_motor_config", "get_counter_config",
+            "read_all_positions", "read_motor_position",
+            "get_current_datafile", "get_scan_number",
+            "get_beam_status", "get_beam_size",
+            "get_counts", "get_counter",
+            "get_element", "get_anchor", "get_plotselected_counter",
+        ],
     ),
 ]
 
@@ -277,8 +288,10 @@ TOOL_CATEGORIES = [
 async def get_tools():
     """Return available tools (grouped by category) and reference docs for the frontend sidebar."""
     from tools import TOOL_DESCRIPTIONS
-    from tools.cli import REFERENCE_DOCS
+    from beamline_tools.cli import register_refdocs
+    from beamtimehero_cli import refdocs
 
+    register_refdocs()
     by_name = TOOL_DESCRIPTIONS
 
     categorized = []
@@ -299,8 +312,8 @@ async def get_tools():
         categorized.append({"category": "Other", "tools": leftover})
 
     references = [
-        {"name": name, "description": doc["description"]}
-        for name, doc in REFERENCE_DOCS.items()
+        {"name": name, "description": description}
+        for name, description in refdocs.list_docs()
     ]
     return {"categories": categorized, "references": references}
 

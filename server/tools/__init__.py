@@ -1,10 +1,10 @@
-"""BeamtimeHero tool system.
+"""BeamtimeHero tool system — thin shim over `beamline_tools.cli`.
 
-The LLM sees a single `run_command` tool (CLI_TOOL_DEFINITION) and discovers
-capabilities by walking the `beamtimehero` argparse CLI. Tool implementations
-are dispatched by execute_tool. TOOL_DESCRIPTIONS is a flat name → description
-map used only by the frontend sidebar.
+The LLM sees a single `run_command` tool (`CLI_TOOL_DEFINITION`) and walks
+`beamtimehero bth --help` to discover capabilities. Dispatch happens
+in-process via `beamline_tools.cli.run_cli`.
 """
 
 from tools.definitions import CLI_TOOL_DEFINITION, TOOL_DESCRIPTIONS
-from tools.executor import execute_tool
+
+__all__ = ["CLI_TOOL_DEFINITION", "TOOL_DESCRIPTIONS"]
