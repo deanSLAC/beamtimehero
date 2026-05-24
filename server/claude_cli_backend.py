@@ -5,7 +5,7 @@ output. Sessions are persisted by Claude Code on disk — we mint a UUID,
 pass it as `--session-id` on the first turn and `--resume <uuid>` on
 every turn after.
 
-Tool gating lives in `.claude/agents/beamline-bth.md` + `.claude/settings.json`.
+Tool gating lives in `.claude/agents/beamline-bth.md` (persona + tool surface) and `agent.settings.json` (runtime allowlist, loaded by `--settings` so it does not affect any other Claude Code session running in this directory).
 This module only:
   - builds the subprocess argv + env
   - feeds the user message in via stream-json on stdin
@@ -217,6 +217,11 @@ def _run_claude(
         "--agent", agent,
         "--output-format", "stream-json",
         "--input-format", "stream-json",
+        # Runtime allowlist for the embedded agent. Lives in a dedicated
+        # file so it does NOT leak into developer sessions running in
+        # this dir (./.claude/settings.json is intentionally empty).
+        # Path is relative to working_dir (=PROJECT_ROOT).
+        "--settings", "agent.settings.json",
         "--verbose",
     ]
     if is_new_session:

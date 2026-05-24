@@ -1,9 +1,10 @@
-"""BTH `beamtimehero` CLI: upstream parser + the `bth` agent branch.
+"""BTH `beamtimehero` CLI: upstream parser + the `bth` agent profile.
 
-The wrapper exposes a single top-level branch — `bth` — whose subtrees
-(`ref`, `tool`, `spec-read`) come from upstream after filtering through
-`beamline_tools.agent_roles.AGENT_ROLES["bth"]`. The allowlists are
-empty, so every spec-write leaf is dropped before argparse ever sees it.
+The wrapper composes upstream's CLI helpers and registers the BTH
+profile (`beamline_tools.bth_profile`). The profile is a curated view
+of the master catalog whose kebab leaves alias canonical
+`(tree, ..., name)` paths. Discovery: `beamtimehero --list-profiles`,
+`beamtimehero bth --help`.
 
 Importable from the server (`run_cli(...)`) and invokable as a script
 via `scripts/beamtimehero`. Errors → JSON `{"ok": false, "error": ...}`
@@ -13,7 +14,6 @@ on stdout, non-zero exit. Successful tool calls print the tool's stdout
 
 from __future__ import annotations
 
-import argparse
 import io
 import json
 import re
@@ -28,17 +28,15 @@ from beamtimehero_cli import refdocs
 from beamtimehero_cli.cli.__main__ import (
     ToolParser,
     build_catalog_subtrees,
+    build_profile_subtrees,
     build_ref_subtree,
-    categorize,
-    run_ref,
-    run_tool_leaf,
+    dispatch as _cli_dispatch,
     run_with,
 )
+from beamtimehero_cli.cli.profiles import register_profile
 from beamtimehero_cli.tool_catalog import TOOL_DEFINITIONS
 
-from beamline_tools.agent_roles import AGENT_ROLES
-
-ROLE = "bth"
+from beamline_tools.bth_profile import PROFILE as _BTH_PROFILE
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONTEXT_DIR = PROJECT_ROOT / "context"
@@ -54,6 +52,7 @@ _BTH_REFDOCS: list[tuple[str, str, str]] = [
 
 
 _refdocs_registered = False
+_profile_registered = False
 
 
 def register_refdocs() -> None:
@@ -67,97 +66,44 @@ def register_refdocs() -> None:
     _refdocs_registered = True
 
 
-_BTH_ALLOWED_CATEGORIES = frozenset({"tool", "spec-read"})
+def _register_bth_profile() -> None:
+    global _profile_registered
+    if _profile_registered:
+        return
+    register_profile(_BTH_PROFILE)
+    _profile_registered = True
 
 
-def _filter_for_role(spec_write_allow: frozenset[str]) -> list[dict]:
-    """Keep only `tool` / `spec-read` tools, plus any spec-write tools on
-    the role's allowlist (empty for BTH). `db` tools are dropped."""
-    filtered: list[dict] = []
-    for tdef in TOOL_DEFINITIONS:
-        fn = tdef.get("function") or {}
-        name = fn.get("name")
-        category = categorize(tdef)
-        if category == "spec-write":
-            if name in spec_write_allow:
-                filtered.append(tdef)
-            continue
-        if category in _BTH_ALLOWED_CATEGORIES:
-            filtered.append(tdef)
-    return filtered
-
-
-def bth_tool_definitions() -> list[dict]:
-    """Public: the upstream tool defs that survive the bth filter."""
-    return _filter_for_role(AGENT_ROLES[ROLE]["spec_write_tools"])
-
-
-def _strip_empty_subtrees(branch_subs: argparse._SubParsersAction) -> None:
-    """Drop `db` / `spec-write` subtrees if filtering left them with no leaves
-    — otherwise --help would advertise commands the agent cannot invoke."""
-    for tree_name in ("db", "spec-write"):
-        tree_parser = branch_subs.choices.get(tree_name)
-        if tree_parser is None:
-            continue
-        has_leaves = any(
-            isinstance(a, argparse._SubParsersAction) and a.choices
-            for a in tree_parser._actions
-        )
-        if has_leaves:
-            continue
-        del branch_subs.choices[tree_name]
-        branch_subs._choices_actions = [
-            a for a in branch_subs._choices_actions
-            if getattr(a, "dest", None) != tree_name
-        ]
-
-
-def _build_bth_branch(trees: argparse._SubParsersAction) -> None:
-    branch = trees.add_parser(
-        ROLE,
-        help="BeamtimeHero agent surface (ref, tool, spec-read).",
-    )
-    branch_subs = branch.add_subparsers(dest="subtree", metavar="<tree>")
-    build_ref_subtree(branch_subs)
-    build_catalog_subtrees(branch_subs, bth_tool_definitions())
-    _strip_empty_subtrees(branch_subs)
-
-
-def build_parser() -> argparse.ArgumentParser:
+def build_parser():
     register_refdocs()
+    _register_bth_profile()
     parser = ToolParser(
         prog="beamtimehero",
         description=(
-            "BTH-scoped beamtimehero CLI. The `bth` branch holds every "
+            "BTH-scoped beamtimehero CLI. The `bth` profile lists every "
             "command the BeamtimeHero agent is allowed to run."
         ),
     )
+    parser.add_argument(
+        "--list-profiles", action="store_true", dest="list_profiles",
+        help="List registered agent profiles and their alias counts.",
+    )
     trees = parser.add_subparsers(dest="tree", metavar="<tree>")
-    _build_bth_branch(trees)
+    build_ref_subtree(trees)
+    build_catalog_subtrees(trees, TOOL_DEFINITIONS)
+    build_profile_subtrees(trees, TOOL_DEFINITIONS)
     return parser
 
 
-def dispatch(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
-    if getattr(args, "tree", None) != ROLE:
-        parser.print_help()
-        return 0
-    subtree = getattr(args, "subtree", None)
-    if not subtree:
-        parser.parse_args([ROLE, "--help"])
-        return 0
-    if subtree == "ref":
-        return run_ref(args)
-    if not getattr(args, "leaf", None):
-        parser.parse_args([ROLE, subtree, "--help"])
-        return 0
-    return run_tool_leaf(args)
-
-
-_KNOWN_TREES = frozenset({ROLE})
+_KNOWN_TREES = frozenset({
+    "ref", "tool", "db", "spec-read", "spec-write",
+    "spec-file", "s3df", "slack",
+    _BTH_PROFILE["name"],
+})
 
 
 def main(argv: list[str] | None = None) -> int:
-    return run_with(build_parser, dispatch, argv, known_trees=_KNOWN_TREES)
+    return run_with(build_parser, _cli_dispatch, argv, known_trees=_KNOWN_TREES)
 
 
 # ---------------------------------------------------------------------------
@@ -189,9 +135,9 @@ def run_cli(command_str: str) -> tuple[str, list[str]]:
     sys.stdout = buf
     try:
         try:
-            rc = main(argv)
+            main(argv)
         except SystemExit as e:
-            rc = int(e.code or 0)
+            int(e.code or 0)
     finally:
         sys.stdout = real_stdout
 
