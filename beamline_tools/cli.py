@@ -41,7 +41,6 @@ from beamtimehero_cli.tool_catalog import TOOL_DEFINITIONS
 from beamline_tools.bth_profile import PROFILE as _BTH_PROFILE
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CONTEXT_DIR = PROJECT_ROOT / "context"
 
 _BTH_REFDOCS: list[tuple[str, str, str]] = [
     ("spec-commands", "context/BL15-2_SPEC_Reference.txt",
@@ -102,14 +101,22 @@ def build_parser():
     # even parse them. agent.settings.json deny rules are the second layer.
     if _full_cli_enabled():
         build_catalog_subtrees(trees, TOOL_DEFINITIONS)
-    else:
-        # build_profile_subtrees registers EVERY profile in the upstream
-        # registry (which auto-registers built-ins like bl-aligner). Prune
-        # to bth only so future upstream profiles can't silently widen the
-        # agent-facing surface.
-        for name in [n for n in PROFILES if n != _BTH_PROFILE["name"]]:
-            del PROFILES[name]
-    build_profile_subtrees(trees, TOOL_DEFINITIONS)
+        build_profile_subtrees(trees, TOOL_DEFINITIONS)
+        return parser
+
+    # build_profile_subtrees iterates upstream's global PROFILES registry
+    # (which auto-discovers built-ins like bl-aligner). Restrict it to bth
+    # for the duration of the build so future upstream profiles can't
+    # silently widen the agent-facing surface — then restore it, since a
+    # permanent prune would truncate the registry for any other in-process
+    # consumer.
+    others = {n: p for n, p in PROFILES.items() if n != _BTH_PROFILE["name"]}
+    for name in others:
+        del PROFILES[name]
+    try:
+        build_profile_subtrees(trees, TOOL_DEFINITIONS)
+    finally:
+        PROFILES.update(others)
     return parser
 
 
@@ -124,7 +131,19 @@ def _known_trees() -> frozenset[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    return run_with(build_parser, _cli_dispatch, argv, known_trees=_known_trees())
+    if _full_cli_enabled():
+        return run_with(build_parser, _cli_dispatch, argv, known_trees=_known_trees())
+    # Hide non-bth profiles for the whole invocation (parse AND dispatch),
+    # so `--list-profiles` doesn't advertise profiles the parser won't
+    # accept. build_parser() does the same prune/restore internally for
+    # in-process callers; the dict operations nest cleanly.
+    others = {n: p for n, p in PROFILES.items() if n != _BTH_PROFILE["name"]}
+    for name in others:
+        del PROFILES[name]
+    try:
+        return run_with(build_parser, _cli_dispatch, argv, known_trees=_known_trees())
+    finally:
+        PROFILES.update(others)
 
 
 if __name__ == "__main__":

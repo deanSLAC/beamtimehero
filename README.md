@@ -1,76 +1,45 @@
 # BeamtimeHero
 
-Chat interface for synchrotron beamline users at SSRL BL15-2. Users ask questions about their experiment through a web UI. Questions are answered by an LLM (via Stanford AI API Gateway) that can query beamline scans, search logs, read/write macros, send commands to SPEC, and generate plots. Conversations are mirrored to Slack where staff can monitor, respond, and collaborate in real time.
+Chat interface for synchrotron beamline users at SSRL BL15-2. Users ask questions about their experiment through a web UI. Questions are answered by an LLM agent (Claude Code, spawned as a `claude -p --resume` subprocess per turn) that can query beamline scans, search logs, read SPEC state, and generate plots. Conversations are mirrored to Slack where staff can monitor, respond, and collaborate in real time.
 
 Runs locally on the beamline computer for direct access to SPEC data files, logs, the SPEC config, and the running SPEC session.
 
 ## Architecture
 
 ```
-User (Browser)  <-->  FastAPI Server  <-->  Stanford AI API (LLM)
+User (Browser)  <-->  FastAPI Server  <-->  claude -p --resume (subprocess per turn)
                            |                       |
-                       Slack Bridge           Tool System
-                      /           \          (22 tools)
-              #beamtimehero    #users            |
-              (LLM log)     (staff-user    beamline_lib/
-                             relay)       (scans, logs, plots,
-                                          files, SPEC config,
-                          Staff DMs        SPEC commands)
+                       Slack Bridge          Bash -> ./scripts/beamtimehero
+                      /           \                |
+              #beamtimehero    #users         bth profile (~42 commands)
+              (LLM log)     (staff-user       + ref docs, aliasing the
+                             relay)           shared beamtimehero_cli
+                                              catalog (scans, logs,
+                          Staff DMs           plots, SPEC read-only)
                        (independent
                         sessions)
 ```
 
-All data access is local filesystem -- no database required. SPEC data files are read directly via silx, with scan metadata cached in a JSON sidecar for performance. Logs are parsed on demand from SPEC log files.
+All data access is local filesystem -- no database required. SPEC data files are read directly via silx through the shared `beamtimehero_cli` package; logs are parsed on demand from SPEC log files.
 
 ## Tool System
 
-The LLM has access to 22 beamline tools:
+The agent is Claude Code running the `beamline-bth` persona (`.claude/agents/beamline-bth.md`). It has no in-process tools; it shells into two flat CLI trees via Bash:
 
-### Data & Logs
-| Tool | Purpose |
-|------|---------|
-| `get_latest_scan` | Most recent scan metadata + data preview |
-| `list_scans` | Browse processed scan history |
-| `read_scan` | Read a specific scan's data |
-| `get_latest_log_entries` | Recent beamline control log output |
-| `search_logs` | Search logs for errors or strings |
-| `list_logs` | List available log files |
+```
+beamtimehero ref --list                  # list reference docs
+beamtimehero ref <name>                  # fetch a doc (procedures, SPEC reference)
+beamtimehero bth --help                  # discover every agent command
+beamtimehero bth <leaf> [--flag ...]     # e.g. bth list-scans, bth plot-scan,
+                                         #      bth read-motor-position
+```
 
-### Analysis
-| Tool | Purpose |
-|------|---------|
-| `get_active_counter` | Detect active fluorescence counter |
-| `get_scan_deadtime` | Scan overhead/efficiency stats |
-| `normalize_scan` | Edge-step normalize a scan |
-| `average_scans` | Average energy scans with std dev |
-| `analyze_convergence` | Check if repeated scans have converged |
-| `analyze_efficiency` | Full efficiency report with optimal scan count |
+The `bth` leaves are curated aliases declared in `beamline_tools/bth_profile.py`, each pointing at a canonical tool in the upstream `beamtimehero_cli` catalog. They cover scan data and analysis, plotting, beamline logs, file/macro access, and read-only SPEC state.
 
-### Plotting
-| Tool | Purpose |
-|------|---------|
-| `plot_scan` | Generate and display a scan plot |
-| `plot_averaged_scans` | Overlay averaged scans for multiple samples |
-| `plot_data` | General-purpose line chart |
+Tool access is gated in two independent layers:
 
-### File Access
-| Tool | Purpose |
-|------|---------|
-| `list_files` | List non-SPEC files in the scan directory (macros, configs) |
-| `read_file` | Read a text file from the scan directory |
-| `write_summary` | Save a conversation summary as timestamped .txt |
-| `write_macro` | Save an edited macro as `<name>_hero-edit_<timestamp>.mac` |
-
-### SPEC Integration
-| Tool | Purpose |
-|------|---------|
-| `get_motor_config` | Motor configuration from SPEC config file |
-| `get_counter_config` | Counter configuration from SPEC config file |
-| `spec_command` | Send whitelisted commands to the running SPEC session (wa, pwd, fon, get_S) |
-
-### Tool Discovery
-
-The LLM sees a single `run_command` tool. It discovers available commands progressively via `beamtimehero --help`, and looks up large reference documents on-demand via `beamtimehero reference <doc>` -- keeping the system prompt small.
+1. **Parse-time** -- `build_parser()` in `beamline_tools/cli.py` registers only the `ref` and `bth` trees; the canonical trees (`spec-write`, `db`, ...) cannot even be parsed by the agent-facing binary. Operators can set `BEAMTIMEHERO_FULL_CLI=1` at a terminal to restore the full upstream catalog.
+2. **Permission-time** -- `agent.settings.json` deny rules and the agent frontmatter allowlist (Bash restricted to `beamtimehero bth *` / `ref *`, Read restricted to `context/**` and `data/**`).
 
 ## Slack Integration
 
@@ -80,36 +49,34 @@ Three-channel architecture with a single Slack bot:
 - **#users** (relay channel) -- Pure relay between web app users and staff. No LLM involvement. Users see these in the "Staff Chat" pane.
 - **Staff DMs** -- Staff can DM the bot for independent chat sessions, each DM thread gets its own conversation.
 
-Staff can change the active scan directory at runtime via `!setdir 2026-04_Username` in either channel. `!setdir auto` re-detects the newest experiment folder.
+Staff can change the active scan directory at runtime via `!setdir 2026-04_Username` from either staff channel or a DM (other channels are ignored). `!setdir auto` re-detects the newest experiment folder. Changing the directory resets the conversation.
 
 ## Project Structure
 
 ```
-beamline_lib/         Beamline data packages (self-contained)
-  blmcp/              Tool implementations (scan, log, plot operations)
-  bldata_analysis/    Data analysis layer (scans, logs, plotting)
-  bllogs_converter/   Log parsing (log_parser.py used for on-demand parsing)
-  local_data.py       Local filesystem data access via silx (reads SPEC files directly)
-  bl_config.py        Beamline configuration (data paths, mutable scan dir)
-  spec_client.py      SPEC session commands via GNU screen injection
-  spec_config.py      SPEC motor/counter config file parser
+beamline_tools/       BTH extension layer over the shared beamtimehero_cli package
+  cli.py              Agent-facing CLI: ref + bth trees, parse-time gating
+  bth_profile.py      Curated agent profile (the bth aliases)
+  config.py           Env defaults for the live beamline host (SPEC_MOCK=0, screen)
+scripts/beamtimehero  Thin shell wrapper around beamline_tools.cli:main
 server/               Python FastAPI backend
   app.py              Main server (REST + WebSocket + Slack callbacks)
-  api_client.py       Stanford AI API Gateway client
-  conversation.py     LLM conversation management + tool loop
+  claude_cli_backend.py  Spawns `claude -p` per turn, parses stream-JSON output
+  conversation.py     Session lifecycle, turn serialization, transcript persistence
   slack_bridge.py     Three-channel Slack bridge + !setdir + staff DMs
-  config.py           App configuration (API keys, paths, modes)
-  tools/              Tool system
-    definitions.py    CLI tool schema + sidebar descriptions
-    executor.py       Tool dispatch (calls blmcp.tools + file/spec tools)
-    cli.py            Argparse CLI for progressive discovery mode
-static/               Plain JavaScript frontend
+  config.py           App configuration (gateway selection, paths)
+  tools/              Sidebar tool descriptions (derived from the bth profile)
+static/               Plain JavaScript frontend (no build step)
   index.html          Split-pane chat interface (AI + Staff) with sidebar
   css/style.css       SSRL theme (beige + red accents)
-  js/app.js           Chat client with WebSocket + markdown/image rendering
+  js/app.js           Chat client: WebSocket events, history replay, sanitized markdown
   js/marked.min.js    Markdown parser library
+  js/purify.min.js    DOMPurify HTML sanitizer
   images/             SSRL logo
 context/              Beamline reference documents (served via `beamtimehero ref`)
+.claude/agents/       The beamline-bth agent persona
+tests/                pytest suite (CLI gating, profile surface, turn serialization,
+                      session recovery)
 ```
 
 ## Setup (Beamline Computer)
@@ -117,6 +84,8 @@ context/              Beamline reference documents (served via `beamtimehero ref
 ### Prerequisites
 
 - Python 3.10+ (the venv on the beamline host runs 3.13)
+- The `claude` CLI (Claude Code) on PATH
+- The shared CLI package checked out as a sibling: `../beamtimehero_cli` (installed editably by requirements.txt)
 - Access to SPEC data files and logs on the local filesystem
 - GNU screen with a SPEC session named `spec` (for SPEC command tools)
 
@@ -137,26 +106,32 @@ cp .env.example .env
 ```
 
 Edit `.env` and set:
-- `API_KEY` -- your Stanford AI API Gateway key (required)
-- `BL_SCAN_DIR` -- path to SPEC data root (default: `/data/fifteen`, auto-detects newest subfolder)
+- `LLM_GATEWAY` -- which gateway Claude Code routes through: `stanford`, `slac`, or `default` (a locally-authenticated `claude` binary, no key needed)
+- `STANFORD_API_KEY` / `SLAC_API_KEY` -- the key for the chosen gateway
+- `BL_SCAN_DIR` -- path to SPEC data root (default: `/data/fifteen`, auto-detects newest `YYYY-mm_*` subfolder)
 - `BL_LOGS_DIR` -- path to SPEC log files (default: `/usr/local/lib/spec.log/logfiles`)
 - Slack tokens and channel IDs (optional, for staff bridge)
 
 ### Run
 
 ```bash
+./run.sh                 # http://localhost:8742/ (localhost only)
+# or
 source venv/bin/activate
-python server/app.py
+python server/app.py     # http://localhost:8080/
 ```
 
-The app serves at `http://localhost:8080/`.
+The server binds `127.0.0.1` by default -- the API is unauthenticated, so set `HOST` deliberately if you need to expose it.
+
+Tests: `venv/bin/python -m pytest tests/`
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |---|---|---|
-| `API_KEY` | Yes | Stanford AI API Gateway key |
-| `STANFORD_MODEL` | No | LLM model (default: `claude-4-5-sonnet`) |
+| `LLM_GATEWAY` | No | `stanford`, `slac`, or `default` (default: `default`) |
+| `STANFORD_API_KEY` / `SLAC_API_KEY` | For named gateways | API key for the selected gateway |
+| `CLAUDE_BIN` | No | Path to the `claude` binary (default: `claude` on PATH) |
 | `BL_SCAN_DIR` | No | Path to SPEC data root (default: `/data/fifteen`) |
 | `BL_LOGS_DIR` | No | Path to SPEC log files |
 | `SLACK_BOT_TOKEN` | No | Slack bot token (`xoxb-...`) |
@@ -164,5 +139,10 @@ The app serves at `http://localhost:8080/`.
 | `SLACK_LLM_CHANNEL_ID` | No | Slack channel for user-LLM conversation log |
 | `SLACK_USERS_CHANNEL_ID` | No | Slack channel for staff-user communication |
 | `BASE_PATH` | No | URL base path (default: empty, i.e. served at `/`) |
+| `PORT` / `HOST` | No | Bind address (defaults: `8080` / `127.0.0.1`; `run.sh` uses `8742`) |
+| `BEAMTIMEHERO_DATA_DIR` | No | Data dir for plots + the persisted conversation manifest (default: `./data/`) |
+| `BEAMTIMEHERO_TURN_TIMEOUT_SECONDS` | No | Hard wall clock per `claude -p` turn (default: `600`) |
+| `BEAMTIMEHERO_FULL_CLI` | No | Operator-only: `1` exposes the full upstream CLI catalog at a terminal |
+| `MLFLOW_ENABLED` / `MLFLOW_TRACKING_URI` / `MLFLOW_TRACKING_TOKEN` | No | Best-effort MLflow tracing (disabled by default) |
 
 Slack integration is optional -- without tokens, the app still works as a standalone LLM chat.

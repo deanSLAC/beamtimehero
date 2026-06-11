@@ -65,6 +65,19 @@
         list.appendChild(li);
     }
 
+    function sidebarItem(list, name, description) {
+        const li = document.createElement("li");
+        const nameEl = document.createElement("span");
+        nameEl.className = "tool-name";
+        nameEl.textContent = name;
+        const descEl = document.createElement("span");
+        descEl.className = "tool-desc";
+        descEl.textContent = description;
+        li.appendChild(nameEl);
+        li.appendChild(descEl);
+        list.appendChild(li);
+    }
+
     async function loadTools() {
         try {
             const response = await fetch(`${BASE}/api/tools`);
@@ -82,31 +95,17 @@
                 toolsList.appendChild(header);
 
                 (group.tools || []).forEach(function (t) {
-                    const li = document.createElement("li");
-                    li.innerHTML =
-                        '<span class="tool-name">' + escapeHtml(t.name) + "</span>" +
-                        '<span class="tool-desc">' + escapeHtml(t.description) + "</span>";
-                    toolsList.appendChild(li);
+                    sidebarItem(toolsList, t.name, t.description);
                 });
             });
 
             (data.references || []).forEach(function (r) {
-                const li = document.createElement("li");
-                li.innerHTML =
-                    '<span class="tool-name">' + escapeHtml(r.name) + "</span>" +
-                    '<span class="tool-desc">' + escapeHtml(r.description) + "</span>";
-                refsList.appendChild(li);
+                sidebarItem(refsList, r.name, r.description);
             });
         } catch (err) {
             console.error("Failed to load tools:", err);
             sidebarNote(toolsList, "Tool list unavailable");
         }
-    }
-
-    function escapeHtml(text) {
-        var div = document.createElement("div");
-        div.textContent = text;
-        return div.innerHTML;
     }
 
     // --- Connection status ---
@@ -159,13 +158,13 @@
             const data = JSON.parse(event.data);
             if (data.type === "staff_message") {
                 // Staff message from #users channel → staff pane
-                addStaffMessage("staff", data.text, data.name);
+                addStaffMessage("staff", data.text, data.name, data.id);
             } else if (data.type === "staff_in_llm") {
                 // Staff message from #llm thread → AI pane
                 addMessage("staff", data.text, data.name, null, data.id);
             } else if (data.type === "user_to_staff") {
                 // Echo of our message to staff → staff pane
-                addStaffMessage("user", data.text);
+                addStaffMessage("user", data.text, null, data.id);
             } else if (data.type === "user") {
                 // A user turn (possibly from another tab/screen) → AI pane
                 addMessage("user", data.text, null, null, data.id);
@@ -280,7 +279,12 @@
     }
 
     // --- Staff Chat Messages ---
-    function addStaffMessage(role, text, label) {
+    function addStaffMessage(role, text, label, id) {
+        if (id) {
+            if (renderedIds.has(id)) return;
+            renderedIds.add(id);
+        }
+
         const div = document.createElement("div");
         div.className = "message " + (role === "staff" ? "staff" : "user");
 

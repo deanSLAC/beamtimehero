@@ -53,31 +53,29 @@ connected_ws: set[WebSocket] = set()
 _event_loop: asyncio.AbstractEventLoop | None = None
 
 
-def _on_tool_status(names: list[str]):
+def _on_tool_start(names: list[str]):
     _broadcast({"type": "tool_status", "tools": names})
 
 
 def _new_conversation() -> ConversationService:
-    return ConversationService(client=claude_client, on_tool_status=_on_tool_status)
+    return ConversationService(client=claude_client, on_tool_start=_on_tool_start)
 
 
 def _swap_conversation() -> ConversationService | None:
     """Replace the global conversation, waiting out any in-flight turn.
 
-    Acquiring the old conversation's turn lock before swapping means a
-    running turn finishes (and persists) against its own session before
-    the new one becomes visible to new requests.
+    Retiring the old conversation blocks until a running turn finishes,
+    then drops the manifest, so the new conversation never races a
+    stale persist.
     """
     global conversation
 
     old = conversation
     if old is not None:
-        with old._turn_lock:
-            ConversationService.clear_state()
-            conversation = _new_conversation() if llm_configured() else None
+        old.retire()
     else:
         ConversationService.clear_state()
-        conversation = _new_conversation() if llm_configured() else None
+    conversation = _new_conversation() if llm_configured() else None
     return conversation
 
 
@@ -114,7 +112,10 @@ def on_staff_message(text: str, staff_name: str):
 
     Pure relay — just forward to the web UI, no LLM involved.
     """
-    _broadcast({"type": "staff_message", "name": staff_name, "text": text})
+    _broadcast({
+        "type": "staff_message", "id": new_message_id(),
+        "name": staff_name, "text": text,
+    })
 
 
 def on_llm_thread_reply(text: str, staff_name: str):
@@ -229,6 +230,11 @@ async def lifespan(app: FastAPI):
     # Store the event loop reference for cross-thread broadcasts
     _event_loop = asyncio.get_running_loop()
 
+    # Register BTH's reference docs once at startup (idempotent); the
+    # /api/tools handler reads the registry on every request.
+    from beamline_tools.cli import register_refdocs
+    register_refdocs()
+
     # Initialize conversation service
     if llm_configured():
         if not claude_client.health_check():
@@ -240,7 +246,7 @@ async def lifespan(app: FastAPI):
             # Resume the previous conversation if a manifest survives the
             # restart — Claude Code's session store still has the context.
             conversation = ConversationService.from_state(
-                client=claude_client, on_tool_status=_on_tool_status
+                client=claude_client, on_tool_start=_on_tool_start
             ) or _new_conversation()
             logger.info("LLM conversation service initialized (session=%s)", conversation.session_id)
         except Exception as e:
@@ -417,10 +423,8 @@ TOOL_CATEGORIES = [
 async def get_tools():
     """Return available tools (grouped by category) and reference docs for the frontend sidebar."""
     from tools import TOOL_DESCRIPTIONS
-    from beamline_tools.cli import register_refdocs
     from beamtimehero_cli import refdocs
 
-    register_refdocs()
     by_name = TOOL_DESCRIPTIONS
 
     categorized = []
@@ -429,7 +433,7 @@ async def get_tools():
         items = [
             {"name": n, "description": by_name[n]} for n in names if n in by_name
         ]
-        seen.update(items_name["name"] for items_name in items)
+        seen.update(item["name"] for item in items)
         if items:
             categorized.append({"category": category, "tools": items})
 
@@ -468,7 +472,9 @@ async def staff_message(payload: dict):
     slack_bridge.post_user_to_staff(user_text)
 
     # Echo back to all WebSocket clients so the sender sees it in the staff pane
-    await broadcast_ws({"type": "user_to_staff", "text": user_text})
+    await broadcast_ws({
+        "type": "user_to_staff", "id": new_message_id(), "text": user_text,
+    })
 
     return {"status": "sent"}
 

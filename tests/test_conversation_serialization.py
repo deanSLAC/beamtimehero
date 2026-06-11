@@ -1,6 +1,6 @@
-"""Turns on one ConversationService must serialize: a staff !LLM reply
-arriving mid-web-turn queues instead of spawning a concurrent
-`claude --resume` against the same session."""
+"""Turns on one ConversationService must serialize: a staff reply from
+the Slack LLM thread arriving mid-web-turn queues instead of spawning a
+concurrent `claude --resume` against the same session."""
 import threading
 import time
 

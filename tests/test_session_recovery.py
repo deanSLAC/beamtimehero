@@ -65,3 +65,24 @@ def test_clear_state_removes_manifest(monkeypatch, tmp_path):
     state_file.write_text("{}")
     ConversationService.clear_state()
     assert not state_file.exists()
+
+
+def test_retire_drops_manifest_and_stops_persisting(monkeypatch, tmp_path):
+    state_file = tmp_path / "conversation_state.json"
+    monkeypatch.setattr(conv_mod, "STATE_FILE", state_file)
+
+    def ok_send(client, session_id, user_text, **kwargs):
+        return "the reply", [], []
+
+    monkeypatch.setattr(conv_mod, "send_and_collect", ok_send)
+    svc = ConversationService()
+    svc.handle_message("question")
+    assert state_file.exists()
+
+    svc.retire()
+    assert not state_file.exists()
+
+    # A turn that was queued on the retired instance may still run, but
+    # must not resurrect the manifest the replacement now owns.
+    svc.handle_message("straggler")
+    assert not state_file.exists()

@@ -39,7 +39,7 @@ CLAUDE_PLOTS_ROOT = Path(
 
 # Hard per-turn wall clock. A hung gateway or stuck `claude` process must
 # not wedge the conversation forever.
-TURN_TIMEOUT_SECONDS = float(os.getenv("BTH_TURN_TIMEOUT_SECONDS", "600"))
+TURN_TIMEOUT_SECONDS = float(os.getenv("BEAMTIMEHERO_TURN_TIMEOUT_SECONDS", "600"))
 
 
 # =============================================================================

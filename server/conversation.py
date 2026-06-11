@@ -56,14 +56,14 @@ class ConversationService:
     def __init__(
         self,
         client: ClaudeCLIClient | None = None,
-        on_tool_status: Optional[Callable[[list[str]], None]] = None,
+        on_tool_start: Optional[Callable[[list[str]], None]] = None,
         persist: bool = True,
     ):
         self.client = client or ClaudeCLIClient()
         self.session_id: str = self.client.create_session()
         self.is_started: bool = False
         self.messages: list[dict] = []
-        self.on_tool_status = on_tool_status
+        self.on_tool_start = on_tool_start
         self._persist = persist
         self._turn_lock = threading.Lock()
 
@@ -75,7 +75,7 @@ class ConversationService:
     def from_state(
         cls,
         client: ClaudeCLIClient | None = None,
-        on_tool_status: Optional[Callable[[list[str]], None]] = None,
+        on_tool_start: Optional[Callable[[list[str]], None]] = None,
     ) -> "ConversationService | None":
         """Rebuild a service from the persisted manifest, or None."""
         try:
@@ -90,7 +90,7 @@ class ConversationService:
                            exc_info=True)
             return None
 
-        svc = cls(client=client, on_tool_status=on_tool_status)
+        svc = cls(client=client, on_tool_start=on_tool_start)
         svc.session_id = session_id
         svc.is_started = is_started
         svc.messages = [m for m in messages if isinstance(m, dict)]
@@ -131,6 +131,18 @@ class ConversationService:
         except OSError:
             logger.warning("Failed to remove %s", STATE_FILE, exc_info=True)
 
+    def retire(self) -> None:
+        """Wait out any in-flight turn, then stop persisting and drop the
+        manifest.
+
+        Called when this conversation is being replaced. A turn already
+        queued on this instance may still run afterwards, but it must not
+        resurrect the manifest that now belongs to the replacement.
+        """
+        with self._turn_lock:
+            self._persist = False
+            self.clear_state()
+
     # ------------------------------------------------------------------
     # Turn execution
     # ------------------------------------------------------------------
@@ -166,7 +178,7 @@ class ConversationService:
                 is_new_session=not self.is_started,
                 agent=self.AGENT_NAME,
                 staff_name=staff_name,
-                on_tool_start=self.on_tool_status,
+                on_tool_start=self.on_tool_start,
             )
         except Exception as e:
             logger.error("Claude turn failed: %s", e, exc_info=True)

@@ -30,8 +30,6 @@ BL_TIMEZONE = _upstream.BL_TIMEZONE
 now_pacific = _upstream.now_pacific
 set_scan_dir = _upstream.set_scan_dir
 
-CONTEXT_DIR = PROJECT_ROOT / "context"
-
 
 def get_scan_dir() -> Path:
     """Current BL_SCAN_DIR (re-read each call so set_scan_dir is visible)."""

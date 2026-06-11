@@ -16,7 +16,6 @@ load_dotenv()
 
 # Paths
 PROJECT_ROOT = Path(__file__).parent.parent
-CONTEXT_DIR = PROJECT_ROOT / "context"
 STATIC_DIR = PROJECT_ROOT / "static"
 
 # LLM gateway selection
