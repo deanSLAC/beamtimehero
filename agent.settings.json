@@ -9,9 +9,12 @@
       "Bash(./scripts/beamtimehero ref *)",
       "Bash(./scripts/beamtimehero bth --help)",
       "Bash(./scripts/beamtimehero bth *)",
-      "Read(*)"
+      "Read(context/**)",
+      "Read(data/**)"
     ],
     "deny": [
+      "Read(.env*)",
+      "Read(venv/**)",
       "Bash(./scripts/beamtimehero spec-write *)",
       "Bash(./scripts/beamtimehero db *)",
       "Bash(./scripts/beamtimehero tool *)",

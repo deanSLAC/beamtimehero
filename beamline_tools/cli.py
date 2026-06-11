@@ -6,18 +6,20 @@ of the master catalog whose kebab leaves alias canonical
 `(tree, ..., name)` paths. Discovery: `beamtimehero --list-profiles`,
 `beamtimehero bth --help`.
 
-Importable from the server (`run_cli(...)`) and invokable as a script
-via `scripts/beamtimehero`. Errors → JSON `{"ok": false, "error": ...}`
-on stdout, non-zero exit. Successful tool calls print the tool's stdout
-(image paths included) and exit 0.
+By default only the `ref` and `bth` trees are registered with argparse,
+so canonical trees (`spec-write`, `db`, ...) cannot even be parsed by
+the agent-facing binary. Operators can set `BEAMTIMEHERO_FULL_CLI=1`
+to restore the full upstream catalog at a terminal. The deny rules in
+`agent.settings.json` remain as a second, independent layer.
+
+Invokable as a script via `scripts/beamtimehero`. Errors → JSON
+`{"ok": false, "error": ...}` on stdout, non-zero exit. Successful tool
+calls print the tool's stdout (image paths included) and exit 0.
 """
 
 from __future__ import annotations
 
-import io
-import json
-import re
-import shlex
+import os
 import sys
 from pathlib import Path
 
@@ -33,7 +35,7 @@ from beamtimehero_cli.cli.__main__ import (
     dispatch as _cli_dispatch,
     run_with,
 )
-from beamtimehero_cli.cli.profiles import register_profile
+from beamtimehero_cli.cli.profiles import PROFILES, register_profile
 from beamtimehero_cli.tool_catalog import TOOL_DEFINITIONS
 
 from beamline_tools.bth_profile import PROFILE as _BTH_PROFILE
@@ -74,6 +76,11 @@ def _register_bth_profile() -> None:
     _profile_registered = True
 
 
+def _full_cli_enabled() -> bool:
+    """Operator escape hatch: expose the full upstream catalog trees."""
+    return os.environ.get("BEAMTIMEHERO_FULL_CLI") == "1"
+
+
 def build_parser():
     register_refdocs()
     _register_bth_profile()
@@ -90,91 +97,34 @@ def build_parser():
     )
     trees = parser.add_subparsers(dest="tree", metavar="<tree>")
     build_ref_subtree(trees)
-    build_catalog_subtrees(trees, TOOL_DEFINITIONS)
+    # Canonical trees (incl. spec-write/db) are operator-only: without the
+    # env flag they are never registered, so the agent-facing binary cannot
+    # even parse them. agent.settings.json deny rules are the second layer.
+    if _full_cli_enabled():
+        build_catalog_subtrees(trees, TOOL_DEFINITIONS)
+    else:
+        # build_profile_subtrees registers EVERY profile in the upstream
+        # registry (which auto-registers built-ins like bl-aligner). Prune
+        # to bth only so future upstream profiles can't silently widen the
+        # agent-facing surface.
+        for name in [n for n in PROFILES if n != _BTH_PROFILE["name"]]:
+            del PROFILES[name]
     build_profile_subtrees(trees, TOOL_DEFINITIONS)
     return parser
 
 
-_KNOWN_TREES = frozenset({
-    "ref", "tool", "db", "spec-read", "spec-write",
-    "spec-file", "s3df", "slack",
-    _BTH_PROFILE["name"],
+_CATALOG_TREES = frozenset({
+    "tool", "db", "spec-read", "spec-write", "spec-file", "s3df", "slack",
 })
 
 
+def _known_trees() -> frozenset[str]:
+    base = frozenset({"ref", _BTH_PROFILE["name"]})
+    return base | _CATALOG_TREES if _full_cli_enabled() else base
+
+
 def main(argv: list[str] | None = None) -> int:
-    return run_with(build_parser, _cli_dispatch, argv, known_trees=_KNOWN_TREES)
-
-
-# ---------------------------------------------------------------------------
-# In-process entry point used by the server tool loop.
-# ---------------------------------------------------------------------------
-
-_PLOT_LINE_RE = re.compile(r'"(plot_path|image_paths)"')
-
-
-def _split_argv(command_str: str) -> list[str]:
-    """Strip the `beamtimehero` prefix (if any) and shlex-split."""
-    cmd = command_str.strip()
-    if cmd.startswith("beamtimehero"):
-        cmd = cmd[len("beamtimehero"):].strip()
-    return shlex.split(cmd) if cmd else []
-
-
-def run_cli(command_str: str) -> tuple[str, list[str]]:
-    """Run a `beamtimehero ...` command in-process.
-
-    Returns (stdout_text, image_b64s). Plots written by the upstream tool
-    runner land in `BEAMTIMEHERO_PLOTS_DIR` (or `./data/tool_plots/`);
-    when the command's JSON output references `plot_path` / `image_paths`,
-    those files are read and base64-encoded for the LLM/UI.
-    """
-    argv = _split_argv(command_str)
-    buf = io.StringIO()
-    real_stdout = sys.stdout
-    sys.stdout = buf
-    try:
-        try:
-            main(argv)
-        except SystemExit as e:
-            int(e.code or 0)
-    finally:
-        sys.stdout = real_stdout
-
-    text = buf.getvalue()
-    images_b64: list[str] = []
-    if _PLOT_LINE_RE.search(text):
-        images_b64 = _extract_images(text)
-    return text, images_b64
-
-
-def _extract_images(text: str) -> list[str]:
-    """Pull `plot_path` / `image_paths` out of the CLI's JSON envelope and
-    return their bytes base64-encoded."""
-    import base64
-
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(payload, dict):
-        return []
-    paths: list[str] = []
-    p = payload.get("plot_path")
-    if isinstance(p, str):
-        paths.append(p)
-    extra = payload.get("image_paths") or []
-    if isinstance(extra, list):
-        for pth in extra:
-            if isinstance(pth, str) and pth not in paths:
-                paths.append(pth)
-    out: list[str] = []
-    for pth in paths:
-        try:
-            out.append(base64.b64encode(Path(pth).read_bytes()).decode("ascii"))
-        except OSError:
-            continue
-    return out
+    return run_with(build_parser, _cli_dispatch, argv, known_trees=_known_trees())
 
 
 if __name__ == "__main__":

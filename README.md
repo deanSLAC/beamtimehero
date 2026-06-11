@@ -109,14 +109,14 @@ static/               Plain JavaScript frontend
   js/app.js           Chat client with WebSocket + markdown/image rendering
   js/marked.min.js    Markdown parser library
   images/             SSRL logo
-context/              Beamline reference documents (system prompt + on-demand)
+context/              Beamline reference documents (served via `beamtimehero ref`)
 ```
 
 ## Setup (Beamline Computer)
 
 ### Prerequisites
 
-- Python 3.9+
+- Python 3.10+ (the venv on the beamline host runs 3.13)
 - Access to SPEC data files and logs on the local filesystem
 - GNU screen with a SPEC session named `spec` (for SPEC command tools)
 
