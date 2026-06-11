@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 # Add server/ to path for sibling imports, and project root so
@@ -33,8 +33,10 @@ from config import BASE_PATH, STATIC_DIR, PROJECT_ROOT, CLAUDE_BIN, llm_configur
 # import time.
 import beamline_tools.config  # noqa: F401
 
+import threading
+
 from claude_cli_backend import ClaudeCLIClient
-from conversation import ConversationService
+from conversation import ConversationService, new_message_id
 from slack_bridge import SlackBridge
 
 logging.basicConfig(
@@ -51,15 +53,40 @@ connected_ws: set[WebSocket] = set()
 _event_loop: asyncio.AbstractEventLoop | None = None
 
 
+def _on_tool_status(names: list[str]):
+    _broadcast({"type": "tool_status", "tools": names})
+
+
 def _new_conversation() -> ConversationService:
-    return ConversationService(client=claude_client)
+    return ConversationService(client=claude_client, on_tool_status=_on_tool_status)
+
+
+def _swap_conversation() -> ConversationService | None:
+    """Replace the global conversation, waiting out any in-flight turn.
+
+    Acquiring the old conversation's turn lock before swapping means a
+    running turn finishes (and persists) against its own session before
+    the new one becomes visible to new requests.
+    """
+    global conversation
+
+    old = conversation
+    if old is not None:
+        with old._turn_lock:
+            ConversationService.clear_state()
+            conversation = _new_conversation() if llm_configured() else None
+    else:
+        ConversationService.clear_state()
+        conversation = _new_conversation() if llm_configured() else None
+    return conversation
 
 
 async def broadcast_ws(message: dict):
     """Send a message to all connected WebSocket clients."""
     payload = json.dumps(message)
     disconnected = set()
-    for ws in connected_ws:
+    # Copy: the set mutates when clients (dis)connect during the awaits.
+    for ws in list(connected_ws):
         try:
             await ws.send_text(payload)
         except Exception:
@@ -72,7 +99,14 @@ def _broadcast(msg: dict):
     if _event_loop is None:
         logger.warning("No event loop available for WebSocket broadcast")
         return
-    asyncio.run_coroutine_threadsafe(broadcast_ws(msg), _event_loop)
+    fut = asyncio.run_coroutine_threadsafe(broadcast_ws(msg), _event_loop)
+
+    def _log_failure(f):
+        exc = f.exception()
+        if exc is not None:
+            logger.warning("WebSocket broadcast failed: %s", exc)
+
+    fut.add_done_callback(_log_failure)
 
 
 def on_staff_message(text: str, staff_name: str):
@@ -87,14 +121,22 @@ def on_llm_thread_reply(text: str, staff_name: str):
     """Called by SlackBridge when staff replies in a #llm channel thread.
 
     Staff message joins the LLM conversation — displayed in the AI pane,
-    routed to the LLM, and response posted back to Slack.
+    routed to the LLM, and response posted back to Slack. Runs on the
+    Slack Bolt thread; the conversation's turn lock serializes it against
+    web turns.
     """
-    _broadcast({"type": "staff_in_llm", "name": staff_name, "text": text})
+    staff_mid = new_message_id()
+    _broadcast({
+        "type": "staff_in_llm", "id": staff_mid, "name": staff_name, "text": text,
+    })
 
     if conversation:
-        result = conversation.handle_staff_llm(text, staff_name, source="slack_llm_thread")
+        result = conversation.handle_staff_llm(
+            text, staff_name, source="slack_llm_thread", message_id=staff_mid
+        )
         _broadcast({
             "type": "assistant",
+            "id": result.message_id,
             "text": result.text,
             "images": result.images,
         })
@@ -103,6 +145,7 @@ def on_llm_thread_reply(text: str, staff_name: str):
 
 # --- Staff DM conversations (independent from web app) ---
 _dm_conversations: dict[str, ConversationService] = {}
+_dm_lock = threading.Lock()
 
 
 def on_dm_message(text: str, staff_name: str, dm_thread_key: str):
@@ -110,14 +153,19 @@ def on_dm_message(text: str, staff_name: str, dm_thread_key: str):
 
     Each DM thread gets its own conversation session.
     """
-    if dm_thread_key not in _dm_conversations:
-        if not llm_configured():
-            logger.warning("Cannot handle DM: gateway not configured")
-            return
-        _dm_conversations[dm_thread_key] = _new_conversation()
-        logger.info("New DM conversation for %s (key: %s)", staff_name, dm_thread_key)
-
-    dm_conversation = _dm_conversations[dm_thread_key]
+    with _dm_lock:
+        if dm_thread_key not in _dm_conversations:
+            if not llm_configured():
+                logger.warning("Cannot handle DM: gateway not configured")
+                return
+            # No web broadcast or manifest for DM side-conversations.
+            _dm_conversations[dm_thread_key] = ConversationService(
+                client=claude_client, persist=False
+            )
+            logger.info(
+                "New DM conversation for %s (key: %s)", staff_name, dm_thread_key
+            )
+        dm_conversation = _dm_conversations[dm_thread_key]
 
     try:
         result = dm_conversation.handle_staff_llm(text, staff_name, source="slack_dm")
@@ -137,8 +185,6 @@ def on_setdir(dir_name: str) -> str:
 
     Changes the scan directory and resets the conversation.
     """
-    global conversation
-
     from beamline_tools import config as bl_config
     from beamtimehero_cli.spec_data import local_data as bl_local_data
 
@@ -147,14 +193,32 @@ def on_setdir(dir_name: str) -> str:
 
     # Subprocess invocations of `claude -p` re-read BL_SCAN_DIR from env;
     # publish the new value so the next turn's tool calls see it.
-    os.environ["BL_SCAN_DIR"] = str(bl_config.get_scan_dir())
+    new_dir = bl_config.get_scan_dir()
+    os.environ["BL_SCAN_DIR"] = str(new_dir)
 
     # Reset conversation (same as browser reset)
-    if llm_configured():
-        conversation = _new_conversation()
+    _swap_conversation()
     slack_bridge.reset_thread()
+    _broadcast({"type": "reset"})
 
-    return f"Scan directory set to `{bl_config.get_scan_dir()}`. Conversation reset."
+    # Tool subprocesses re-resolve BL_SCAN_DIR at import: a dir whose name
+    # doesn't match YYYY-mm_* (and has no matching subdir) silently falls
+    # back to upstream's packaged sample data there, even though
+    # set_scan_dir accepted it in this process. Warn instead of lying.
+    name_ok = re.match(r"\d{4}-\d{2}_", new_dir.name)
+    has_dated_subdir = any(
+        d.is_dir() and re.match(r"\d{4}-\d{2}_", d.name)
+        for d in new_dir.iterdir()
+    )
+    if not name_ok and not has_dated_subdir:
+        return (
+            f":warning: `{new_dir}` was set, but its name does not match "
+            "`YYYY-mm_*` and it has no such subdirectory — tool calls "
+            "re-resolve the scan dir and will fall back to packaged DEMO "
+            "data. Rename the directory or pick a `YYYY-mm_*` one. "
+            "Conversation reset."
+        )
+    return f"Scan directory set to `{new_dir}`. Conversation reset."
 
 
 @asynccontextmanager
@@ -173,7 +237,11 @@ async def lifespan(app: FastAPI):
                 CLAUDE_BIN,
             )
         try:
-            conversation = _new_conversation()
+            # Resume the previous conversation if a manifest survives the
+            # restart — Claude Code's session store still has the context.
+            conversation = ConversationService.from_state(
+                client=claude_client, on_tool_status=_on_tool_status
+            ) or _new_conversation()
             logger.info("LLM conversation service initialized (session=%s)", conversation.session_id)
         except Exception as e:
             logger.error("Failed to initialize conversation service: %s", e)
@@ -203,10 +271,16 @@ app.mount(
 
 @app.get(f"{BASE_PATH}/health")
 async def health():
+    from beamtimehero_cli import config as _cli_config
+
     return {
         "status": "ok",
         "llm_configured": llm_configured(),
-        "claude_binary": claude_client.health_check(),
+        "claude_binary": await asyncio.to_thread(claude_client.health_check),
+        "scan_dir": str(_cli_config.BL_SCAN_DIR),
+        "logs_dir": str(_cli_config.BL_LOGS_DIR),
+        "using_sample_data": _cli_config.USING_SAMPLE_DATA,
+        "using_sample_logs": _cli_config.USING_SAMPLE_LOGS,
     }
 
 
@@ -217,13 +291,46 @@ async def index():
     )
 
 
-# Register index at BASE_PATH (with and without trailing slash).
-# When BASE_PATH is empty, only "/" is registered (FastAPI rejects "").
+# Register index at BASE_PATH. The bare path redirects to the trailing
+# slash so the page's relative asset URLs (static/...) resolve under
+# BASE_PATH. When BASE_PATH is empty, only "/" is registered (FastAPI
+# rejects "").
 if BASE_PATH:
-    app.get(BASE_PATH)(index)
+    async def _index_redirect():
+        return RedirectResponse(url=f"{BASE_PATH}/")
+
+    app.get(BASE_PATH)(_index_redirect)
     app.get(f"{BASE_PATH}/")(index)
 else:
     app.get("/")(index)
+
+
+def _run_web_turn(conv: ConversationService, user_text: str, user_mid: str) -> dict:
+    """Slack-mirror + LLM turn + broadcasts. Blocking — runs off-loop.
+
+    All clients (including the sender) receive the user/assistant events
+    over the WebSocket; the sender minted `user_mid` so its own immediate
+    render dedups against the broadcast.
+    """
+    _broadcast({"type": "user", "id": user_mid, "text": user_text})
+    slack_bridge.post_user_message(user_text)
+
+    result = conv.handle_message(user_text, source="web", message_id=user_mid)
+
+    _broadcast({
+        "type": "assistant",
+        "id": result.message_id,
+        "text": result.text,
+        "images": result.images,
+    })
+    slack_bridge.post_llm_response(result.text)
+
+    return {
+        "response": result.text,
+        "images": result.images,
+        "id": result.message_id,
+        "user_id": user_mid,
+    }
 
 
 @app.post(f"{BASE_PATH}/api/chat")
@@ -235,6 +342,11 @@ async def chat(payload: dict):
     if not user_text:
         return JSONResponse({"error": "Empty message"}, status_code=400)
 
+    raw_id = payload.get("id", "")
+    user_mid = raw_id if (
+        isinstance(raw_id, str) and raw_id.isalnum() and len(raw_id) <= 64
+    ) else new_message_id()
+
     if not conversation:
         if not llm_configured():
             return JSONResponse(
@@ -242,16 +354,17 @@ async def chat(payload: dict):
             )
         conversation = _new_conversation()
 
-    # Forward user message to Slack
-    slack_bridge.post_user_message(user_text)
+    # Off-loop: the turn blocks on a `claude` subprocess for up to minutes;
+    # running it here would freeze the WebSocket and every other client.
+    return await asyncio.to_thread(_run_web_turn, conversation, user_text, user_mid)
 
-    # Get LLM response
-    result = conversation.handle_message(user_text, source="web")
 
-    # Forward LLM response to Slack
-    slack_bridge.post_llm_response(result.text)
-
-    return {"response": result.text, "images": result.images}
+@app.get(f"{BASE_PATH}/api/history")
+async def history():
+    """Return the display log so clients can render/replay the transcript."""
+    if not conversation:
+        return {"messages": []}
+    return {"messages": conversation.get_history()}
 
 
 # Sidebar category order + membership. Tools not listed here fall under "Other".
@@ -336,13 +449,11 @@ async def get_tools():
 
 @app.post(f"{BASE_PATH}/api/reset")
 async def reset():
-    """Reset the conversation."""
-    global conversation
-
-    if llm_configured():
-        conversation = _new_conversation()
-
+    """Reset the conversation (destroys the shared session for everyone)."""
+    # Off-loop: swapping waits for any in-flight turn to finish.
+    await asyncio.to_thread(_swap_conversation)
     slack_bridge.reset_thread()
+    await broadcast_ws({"type": "reset"})
     return {"status": "reset"}
 
 
@@ -410,6 +521,9 @@ async def websocket_endpoint(ws: WebSocket):
             if data == "ping":
                 await ws.send_text(json.dumps({"type": "pong"}))
     except WebSocketDisconnect:
+        pass
+    finally:
+        # Any exit path must drop the socket or broadcasts hit dead peers.
         connected_ws.discard(ws)
         logger.info("WebSocket client disconnected (%d total)", len(connected_ws))
 
@@ -418,4 +532,6 @@ if __name__ == "__main__":
     import uvicorn
 
     port = int(os.getenv("PORT", "8080"))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # Localhost by default (matches run.sh) — the API is unauthenticated
+    # and drives an agent with file-read access. Set HOST to expose.
+    uvicorn.run(app, host=os.getenv("HOST", "127.0.0.1"), port=port)

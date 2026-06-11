@@ -78,5 +78,12 @@ def gateway_config() -> dict:
 
 
 def llm_configured() -> bool:
-    """True iff a usable gateway key is present for the active gateway."""
+    """True iff the active gateway is usable.
+
+    The "default" gateway means a locally-authenticated `claude` binary,
+    which needs no API key here — binary availability is covered by
+    `ClaudeCLIClient.health_check()`. Named gateways require their key.
+    """
+    if LLM_GATEWAY == "default":
+        return True
     return bool(gateway_config()["key"])

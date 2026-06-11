@@ -115,9 +115,20 @@ class SlackBridge:
             if not text:
                 return
 
-            # --- !setdir command (any channel) ---
+            # --- !setdir command (staff channels and DMs only) ---
             if text.startswith("!setdir"):
+                allowed = channel_type == "im" or channel in (
+                    SLACK_LLM_CHANNEL_ID,
+                    SLACK_USERS_CHANNEL_ID,
+                )
+                if not allowed:
+                    logger.warning(
+                        "Ignoring !setdir from unauthorized channel %s (user %s)",
+                        channel, user_id,
+                    )
+                    return
                 dir_name = text[len("!setdir"):].strip()
+                logger.info("!setdir %r from user %s in %s", dir_name, user_id, channel)
                 if dir_name and self._on_setdir:
                     try:
                         result = self._on_setdir(dir_name)

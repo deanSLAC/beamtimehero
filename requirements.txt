@@ -8,3 +8,6 @@ python-dotenv>=1.0.0
 slack_bolt>=1.18.0
 slack_sdk>=3.27.0
 mlflow>=2.18.0
+
+# dev / tests
+pytest>=8.0

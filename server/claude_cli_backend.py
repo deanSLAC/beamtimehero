@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import subprocess
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -35,6 +36,10 @@ logger = logging.getLogger(__name__)
 CLAUDE_PLOTS_ROOT = Path(
     os.getenv("CLAUDE_PLOTS_ROOT", str(PROJECT_ROOT / "data" / ".claude" / "plots"))
 )
+
+# Hard per-turn wall clock. A hung gateway or stuck `claude` process must
+# not wedge the conversation forever.
+TURN_TIMEOUT_SECONDS = float(os.getenv("BTH_TURN_TIMEOUT_SECONDS", "600"))
 
 
 # =============================================================================
@@ -161,13 +166,24 @@ def _read_plot_files(paths: list[str]) -> list[str]:
     return out
 
 
-def _scrape_session_plots_dir(plots_dir: Path) -> list[str]:
+def _scrape_session_plots_dir(plots_dir: Path, since: float = 0.0) -> list[str]:
     """Fallback: pick up any PNGs the tool wrote that we didn't catch via
     tool_result JSON (e.g. tools whose output format we didn't recognise).
+
+    `since` scopes the scrape to this turn: the directory is per-session
+    and accumulates across turns, so without the watermark every earlier
+    turn's plots would be re-attached to each new answer.
     """
     if not plots_dir.is_dir():
         return []
-    return [str(p) for p in sorted(plots_dir.glob("*.png"))]
+    out = []
+    for p in sorted(plots_dir.glob("*.png")):
+        try:
+            if p.stat().st_mtime >= since:
+                out.append(str(p))
+        except OSError:
+            continue
+    return out
 
 
 # =============================================================================
@@ -205,12 +221,13 @@ def _run_claude(
     plots_dir: Path,
     working_dir: str,
     on_tool_start: Optional[Callable[[list[str]], None]] = None,
-) -> tuple[str, list[dict], list[str]]:
+) -> tuple[str, list[dict], list[str], dict]:
     """Invoke `claude -p` once and parse its stream-JSON output.
 
-    Returns (final_text, tool_calls, image_b64s).
+    Returns (final_text, tool_calls, image_b64s, usage_stats).
     """
     plots_dir.mkdir(parents=True, exist_ok=True)
+    turn_start = time.time()
 
     argv = [
         CLAUDE_BIN, "-p",
@@ -254,13 +271,31 @@ def _run_claude(
         bufsize=1,
     )
 
-    assert proc.stdin is not None
-    try:
-        proc.stdin.write(stdin_payload)
-        proc.stdin.flush()
-        proc.stdin.close()
-    except BrokenPipeError:
-        pass
+    # Drain stderr concurrently: with stderr=PIPE read only after stdout
+    # EOF, a chatty child fills the ~64KB pipe buffer and both processes
+    # deadlock.
+    stderr_chunks: list[str] = []
+
+    def _drain_stderr():
+        try:
+            if proc.stderr is not None:
+                for line in proc.stderr:
+                    stderr_chunks.append(line)
+        except Exception:
+            pass
+
+    stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+    stderr_thread.start()
+
+    timed_out = threading.Event()
+
+    def _kill_on_timeout():
+        timed_out.set()
+        proc.kill()
+
+    watchdog = threading.Timer(TURN_TIMEOUT_SECONDS, _kill_on_timeout)
+    watchdog.daemon = True
+    watchdog.start()
 
     result_text: str = ""
     assistant_text_chunks: list[str] = []
@@ -268,6 +303,7 @@ def _run_claude(
     tool_use_by_id: dict[str, dict] = {}
     plot_paths: list[str] = []
     pending_tool_batch: list[str] = []
+    usage_stats: dict = {}
 
     def _flush_tool_batch():
         if pending_tool_batch and on_tool_start:
@@ -277,89 +313,114 @@ def _run_claude(
                 logger.warning("on_tool_start callback raised", exc_info=True)
         pending_tool_batch.clear()
 
-    assert proc.stdout is not None
-    for raw_line in proc.stdout:
-        evt = _parse_stream_event(raw_line)
-        if not evt:
-            continue
-
-        etype = evt.get("type", "")
-
-        if etype == "assistant":
-            msg = evt.get("message", {}) or {}
-            content = msg.get("content", [])
-            if isinstance(content, list):
-                for block in content:
-                    if not isinstance(block, dict):
-                        continue
-                    btype = block.get("type")
-                    if btype == "text":
-                        t = block.get("text", "")
-                        if t:
-                            assistant_text_chunks.append(t)
-                    elif btype == "tool_use":
-                        tid = block.get("id", "")
-                        tname = block.get("name", "")
-                        tinput = block.get("input", {}) or {}
-                        display_name = (
-                            _extract_bash_tool_name(tinput) if tname == "Bash" else tname
-                        )
-                        record = {
-                            "name": display_name,
-                            "raw_name": tname,
-                            "input": tinput,
-                            "output": "",
-                        }
-                        tool_use_by_id[tid] = record
-                        tool_calls.append(record)
-                        pending_tool_batch.append(display_name)
-            _flush_tool_batch()
-
-        elif etype == "user":
-            # tool_result blocks arrive wrapped in user messages.
-            msg = evt.get("message", {}) or {}
-            content = msg.get("content", [])
-            if isinstance(content, list):
-                for block in content:
-                    if not isinstance(block, dict) or block.get("type") != "tool_result":
-                        continue
-                    tid = block.get("tool_use_id", "")
-                    raw_content = block.get("content", "")
-                    text_content = _extract_text_blocks(raw_content) or (
-                        raw_content if isinstance(raw_content, str) else ""
-                    )
-                    if tid in tool_use_by_id:
-                        tool_use_by_id[tid]["output"] = text_content
-                    plot_paths.extend(_collect_plot_paths_from_tool_result(text_content))
-
-        elif etype == "result":
-            result_text = evt.get("result") or ""
-            if evt.get("is_error"):
-                logger.warning("Claude reported result-level error: %s", evt)
-
-        elif etype == "system" and evt.get("subtype") == "init":
-            logger.debug("Claude session init: %s", evt.get("session_id"))
-
-    _flush_tool_batch()
-
-    stderr_text = ""
-    if proc.stderr is not None:
+    try:
+        assert proc.stdin is not None
         try:
-            stderr_text = proc.stderr.read() or ""
-        except Exception:
-            stderr_text = ""
+            proc.stdin.write(stdin_payload)
+            proc.stdin.flush()
+            proc.stdin.close()
+        except BrokenPipeError:
+            pass
 
-    rc = proc.wait()
+        assert proc.stdout is not None
+        for raw_line in proc.stdout:
+            evt = _parse_stream_event(raw_line)
+            if not evt:
+                continue
+
+            etype = evt.get("type", "")
+
+            if etype == "assistant":
+                msg = evt.get("message", {}) or {}
+                content = msg.get("content", [])
+                if isinstance(content, list):
+                    for block in content:
+                        if not isinstance(block, dict):
+                            continue
+                        btype = block.get("type")
+                        if btype == "text":
+                            t = block.get("text", "")
+                            if t:
+                                assistant_text_chunks.append(t)
+                        elif btype == "tool_use":
+                            tid = block.get("id", "")
+                            tname = block.get("name", "")
+                            tinput = block.get("input", {}) or {}
+                            display_name = (
+                                _extract_bash_tool_name(tinput) if tname == "Bash" else tname
+                            )
+                            record = {
+                                "name": display_name,
+                                "raw_name": tname,
+                                "input": tinput,
+                                "output": "",
+                            }
+                            tool_use_by_id[tid] = record
+                            tool_calls.append(record)
+                            pending_tool_batch.append(display_name)
+                _flush_tool_batch()
+
+            elif etype == "user":
+                # tool_result blocks arrive wrapped in user messages.
+                msg = evt.get("message", {}) or {}
+                content = msg.get("content", [])
+                if isinstance(content, list):
+                    for block in content:
+                        if not isinstance(block, dict) or block.get("type") != "tool_result":
+                            continue
+                        tid = block.get("tool_use_id", "")
+                        raw_content = block.get("content", "")
+                        text_content = _extract_text_blocks(raw_content) or (
+                            raw_content if isinstance(raw_content, str) else ""
+                        )
+                        if tid in tool_use_by_id:
+                            tool_use_by_id[tid]["output"] = text_content
+                        plot_paths.extend(_collect_plot_paths_from_tool_result(text_content))
+
+            elif etype == "result":
+                result_text = evt.get("result") or ""
+                if evt.get("is_error"):
+                    logger.warning("Claude reported result-level error: %s", evt)
+                usage_stats = {
+                    k: evt[k]
+                    for k in ("total_cost_usd", "duration_ms", "num_turns")
+                    if k in evt
+                }
+                usage = evt.get("usage")
+                if isinstance(usage, dict):
+                    for k in ("input_tokens", "output_tokens",
+                              "cache_read_input_tokens", "cache_creation_input_tokens"):
+                        if isinstance(usage.get(k), (int, float)):
+                            usage_stats[k] = usage[k]
+
+            elif etype == "system" and evt.get("subtype") == "init":
+                logger.debug("Claude session init: %s", evt.get("session_id"))
+
+        _flush_tool_batch()
+        rc = proc.wait()
+    finally:
+        watchdog.cancel()
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        stderr_thread.join(timeout=5)
+
+    stderr_text = "".join(stderr_chunks)
+
+    if timed_out.is_set():
+        raise RuntimeError(
+            f"claude turn timed out after {TURN_TIMEOUT_SECONDS:.0f}s and was killed"
+        )
     if rc != 0:
         snippet = stderr_text.strip()[:500] or "<empty stderr>"
         raise RuntimeError(f"claude exited with code {rc}: {snippet}")
 
     final_text = result_text or "\n".join(assistant_text_chunks)
 
-    plot_paths.extend(_scrape_session_plots_dir(plots_dir))
+    plot_paths.extend(_scrape_session_plots_dir(plots_dir, since=turn_start))
     images = _read_plot_files(plot_paths)
 
-    return final_text, tool_calls, images
+    return final_text, tool_calls, images, usage_stats
 
 
 # =============================================================================
@@ -391,7 +452,7 @@ def send_and_collect(
         source=source,
     ) as r:
         t0 = time.time()
-        text, tools, images = _run_claude(
+        text, tools, images, stats = _run_claude(
             user_text=user_text,
             session_id=session_id,
             is_new_session=is_new_session,
@@ -414,6 +475,9 @@ def send_and_collect(
                 mlflow.log_metric("claude_cli_latency_seconds", time.time() - t0)
                 mlflow.log_metric("tool_call_count", len(tools))
                 mlflow.log_metric("images_generated", len(images))
+                for stat_name, stat_value in stats.items():
+                    if isinstance(stat_value, (int, float)):
+                        mlflow.log_metric(stat_name, stat_value)
 
                 per_tool: dict[str, int] = {}
                 for c in tools:
@@ -439,8 +503,10 @@ def send_and_collect(
                     },
                     "tool_calls.json",
                 )
-                if plots_dir.is_dir():
-                    mlflow.log_artifacts(str(plots_dir), artifact_path="plots")
+                # Only this turn's plots — the dir is per-session and
+                # accumulates across turns.
+                for plot_file in _scrape_session_plots_dir(plots_dir, since=t0):
+                    mlflow.log_artifact(plot_file, artifact_path="plots")
             except Exception:
                 logger.warning("MLflow logging failed in claude_cli seam", exc_info=True)
 

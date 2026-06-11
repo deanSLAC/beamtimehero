@@ -47,20 +47,39 @@ def get_or_create_experiment(name: str) -> str | None:
 
 @contextlib.contextmanager
 def run(experiment: str, run_name: str | None = None, **tags):
-    """Best-effort MLflow Run context. Yields the active run, or None on failure/disabled."""
+    """Best-effort MLflow Run context. Yields the active run, or None on failure/disabled.
+
+    Only MLflow's own setup failures are swallowed. The `yield` to the
+    caller sits OUTSIDE the except: an exception raised in the with-body
+    (e.g. a failed claude turn) must propagate untouched — wrapping the
+    yield in `except Exception` would make contextlib re-enter the
+    generator and surface as "generator didn't stop after throw()",
+    masking the real error.
+    """
     if not _enabled():
         yield None
         return
+
+    r = None
+    mlflow = None
     try:
-        import mlflow
+        import mlflow  # noqa: F811
 
         eid = get_or_create_experiment(experiment)
         str_tags = {k: str(v) for k, v in tags.items() if v is not None}
-        with mlflow.start_run(experiment_id=eid, run_name=run_name, tags=str_tags) as r:
-            yield r
+        r = mlflow.start_run(experiment_id=eid, run_name=run_name, tags=str_tags)
     except Exception:
         log.warning("MLflow logging failed", exc_info=True)
         yield None
+        return
+
+    try:
+        yield r
+    finally:
+        try:
+            mlflow.end_run()
+        except Exception:
+            log.warning("MLflow end_run failed", exc_info=True)
 
 
 def decode_b64_png(b64: str):
