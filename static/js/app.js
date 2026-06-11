@@ -2,6 +2,12 @@
  * BeamtimeHero — Chat client
  *
  * Three-panel layout: Sidebar (left) + LLM chat (center) + Staff chat (right)
+ *
+ * The WebSocket is the event stream for chat traffic: user and assistant
+ * turns (from any client), staff messages, tool-status updates, and resets
+ * all arrive as WS events. GET /api/history replays the transcript on load
+ * and reconnect. Messages carry server-assigned ids; `renderedIds` dedups
+ * between the WS event and the sender's own HTTP response.
  */
 (function () {
     "use strict";
@@ -15,7 +21,9 @@
     const sendBtn = document.getElementById("btn-send");
     const resetBtn = document.getElementById("btn-reset");
     const typingEl = document.getElementById("typing-indicator");
+    const toolStatusEl = document.getElementById("tool-status");
     const statusDot = document.getElementById("status-dot");
+    const statusText = document.getElementById("status-text");
 
     // Staff chat elements
     const staffMessagesEl = document.getElementById("staff-messages");
@@ -38,19 +46,33 @@
     let ws = null;
     let sending = false;
     let staffSending = false;
+    const renderedIds = new Set();
 
     // --- Sidebar ---
     function setupToggle(btn, list) {
+        btn.setAttribute("aria-expanded", "false");
         btn.addEventListener("click", function () {
-            btn.classList.toggle("open");
+            const open = btn.classList.toggle("open");
             list.classList.toggle("collapsed");
+            btn.setAttribute("aria-expanded", open ? "true" : "false");
         });
+    }
+
+    function sidebarNote(list, text) {
+        const li = document.createElement("li");
+        li.className = "tool-category";
+        li.textContent = text;
+        list.appendChild(li);
     }
 
     async function loadTools() {
         try {
             const response = await fetch(`${BASE}/api/tools`);
-            if (!response.ok) return;
+            if (!response.ok) {
+                sidebarNote(toolsList, "Tool list unavailable");
+                sidebarNote(refsList, "Reference list unavailable");
+                return;
+            }
             const data = await response.json();
 
             (data.categories || []).forEach(function (group) {
@@ -59,7 +81,7 @@
                 header.textContent = group.category;
                 toolsList.appendChild(header);
 
-                group.tools.forEach(function (t) {
+                (group.tools || []).forEach(function (t) {
                     const li = document.createElement("li");
                     li.innerHTML =
                         '<span class="tool-name">' + escapeHtml(t.name) + "</span>" +
@@ -68,7 +90,7 @@
                 });
             });
 
-            data.references.forEach(function (r) {
+            (data.references || []).forEach(function (r) {
                 const li = document.createElement("li");
                 li.innerHTML =
                     '<span class="tool-name">' + escapeHtml(r.name) + "</span>" +
@@ -77,6 +99,7 @@
             });
         } catch (err) {
             console.error("Failed to load tools:", err);
+            sidebarNote(toolsList, "Tool list unavailable");
         }
     }
 
@@ -84,6 +107,38 @@
         var div = document.createElement("div");
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // --- Connection status ---
+    function setConnected(connected) {
+        statusDot.classList.toggle("disconnected", !connected);
+        if (statusText) {
+            statusText.textContent = connected ? "connected" : "disconnected";
+        }
+        statusDot.title = connected ? "Connected" : "Disconnected";
+    }
+
+    // --- History ---
+    async function loadHistory() {
+        try {
+            const response = await fetch(`${BASE}/api/history`);
+            if (!response.ok) return;
+            const data = await response.json();
+            const messages = data.messages || [];
+
+            messagesEl.innerHTML = "";
+            renderedIds.clear();
+            if (messages.length === 0) {
+                addSystemMessage("Welcome to BeamtimeHero! Ask questions about your beamline experiment.");
+                return;
+            }
+            messages.forEach(function (m) {
+                addMessage(m.role, m.content, m.role === "staff" ? "Staff" : null,
+                    m.images, m.id);
+            });
+        } catch (err) {
+            console.error("Failed to load history:", err);
+        }
     }
 
     // --- WebSocket ---
@@ -94,8 +149,10 @@
         ws = new WebSocket(url);
 
         ws.onopen = function () {
-            statusDot.classList.remove("disconnected");
+            setConnected(true);
             console.log("WebSocket connected");
+            // Re-sync the transcript: events sent while disconnected are gone.
+            loadHistory();
         };
 
         ws.onmessage = function (event) {
@@ -105,18 +162,31 @@
                 addStaffMessage("staff", data.text, data.name);
             } else if (data.type === "staff_in_llm") {
                 // Staff message from #llm thread → AI pane
-                addMessage("staff", data.text, data.name);
+                addMessage("staff", data.text, data.name, null, data.id);
             } else if (data.type === "user_to_staff") {
                 // Echo of our message to staff → staff pane
                 addStaffMessage("user", data.text);
+            } else if (data.type === "user") {
+                // A user turn (possibly from another tab/screen) → AI pane
+                addMessage("user", data.text, null, null, data.id);
             } else if (data.type === "assistant") {
                 // LLM response → AI pane
-                addMessage("assistant", data.text, null, data.images);
+                showToolStatus(null);
+                addMessage("assistant", data.text, null, data.images, data.id);
+            } else if (data.type === "tool_status") {
+                showToolStatus(data.tools || []);
+            } else if (data.type === "reset") {
+                messagesEl.innerHTML = "";
+                staffMessagesEl.innerHTML = "";
+                renderedIds.clear();
+                showToolStatus(null);
+                addSystemMessage("Conversation reset. Ask a new question!");
+                addStaffSystemMessage("Staff chat reset.");
             }
         };
 
         ws.onclose = function () {
-            statusDot.classList.add("disconnected");
+            setConnected(false);
             console.log("WebSocket closed, reconnecting in 3s...");
             setTimeout(connectWS, 3000);
         };
@@ -124,17 +194,23 @@
         ws.onerror = function () {
             ws.close();
         };
-
-        // Heartbeat
-        setInterval(function () {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send("ping");
-            }
-        }, 30000);
     }
 
+    // Single heartbeat for whichever socket is current (a per-connection
+    // interval would leak one timer per reconnect).
+    setInterval(function () {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send("ping");
+        }
+    }, 30000);
+
     // --- LLM Chat Messages ---
-    function addMessage(role, text, label, images) {
+    function addMessage(role, text, label, images, id) {
+        if (id) {
+            if (renderedIds.has(id)) return;
+            renderedIds.add(id);
+        }
+
         const div = document.createElement("div");
         div.className = "message " + role;
 
@@ -154,18 +230,20 @@
         if (role === "user") {
             content.textContent = text;
         } else {
+            // LLM and staff text is untrusted (prompt injection, Slack input)
+            // — sanitize the rendered markdown before it touches the DOM.
             content.className = "markdown-content";
-            content.innerHTML = marked.parse(text || "");
+            content.innerHTML = DOMPurify.sanitize(marked.parse(text || ""));
         }
         div.appendChild(content);
 
         // Render plot images
         if (images && images.length > 0) {
-            images.forEach(function (b64) {
+            images.forEach(function (b64, i) {
                 var img = document.createElement("img");
                 img.src = "data:image/png;base64," + b64;
                 img.className = "plot-image";
-                img.alt = "Plot";
+                img.alt = "Plot " + (i + 1) + " of " + images.length;
                 div.appendChild(img);
             });
         }
@@ -184,8 +262,20 @@
 
     function showTyping(show) {
         typingEl.classList.toggle("visible", show);
+        if (!show) showToolStatus(null);
         if (show) {
             messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+    }
+
+    function showToolStatus(tools) {
+        if (!toolStatusEl) return;
+        if (tools && tools.length > 0) {
+            toolStatusEl.textContent = "Running: " + tools.join(", ");
+            toolStatusEl.classList.add("visible");
+        } else {
+            toolStatusEl.textContent = "";
+            toolStatusEl.classList.remove("visible");
         }
     }
 
@@ -217,6 +307,22 @@
         staffMessagesEl.scrollTop = staffMessagesEl.scrollHeight;
     }
 
+    // --- Fetch helper ---
+    async function parseJsonResponse(response) {
+        // Proxies can answer long-running calls with HTML error pages;
+        // surface the status instead of a JSON parse error.
+        try {
+            return await response.json();
+        } catch (err) {
+            throw new Error(
+                "Server error " + response.status +
+                (response.status >= 502 && response.status <= 504
+                    ? " — the answer may still be processing; reload to check history"
+                    : "")
+            );
+        }
+    }
+
     // --- LLM API ---
     async function sendMessage() {
         const text = inputEl.value.trim();
@@ -227,20 +333,25 @@
         inputEl.value = "";
         inputEl.style.height = "auto";
 
-        addMessage("user", text);
+        // Mint the message id client-side so the broadcast `user` event
+        // (which arrives before the HTTP response) dedups against this
+        // immediate local render.
+        const userId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()))
+            .replace(/-/g, "");
+        addMessage("user", text, null, null, userId);
         showTyping(true);
 
         try {
             const response = await fetch(`${BASE}/api/chat`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message: text }),
+                body: JSON.stringify({ message: text, id: userId }),
             });
 
-            const data = await response.json();
+            const data = await parseJsonResponse(response);
 
             if (response.ok) {
-                addMessage("assistant", data.response, null, data.images);
+                addMessage("assistant", data.response, null, data.images, data.id);
             } else {
                 addSystemMessage("Error: " + (data.error || "Unknown error"));
             }
@@ -272,7 +383,7 @@
             });
 
             if (!response.ok) {
-                const data = await response.json();
+                const data = await parseJsonResponse(response);
                 addStaffSystemMessage("Error: " + (data.error || "Failed to send"));
             }
         } catch (err) {
@@ -285,10 +396,18 @@
     }
 
     async function resetConversation() {
+        // The reset destroys the single shared conversation for every
+        // connected screen and the Slack threads — make it deliberate.
+        if (!confirm("Reset the conversation for ALL connected screens? The assistant loses its context.")) {
+            return;
+        }
         try {
             await fetch(`${BASE}/api/reset`, { method: "POST" });
+            // Panes are cleared by the server's `reset` broadcast; clear
+            // locally too in case the WebSocket is down.
             messagesEl.innerHTML = "";
             staffMessagesEl.innerHTML = "";
+            renderedIds.clear();
             addSystemMessage("Conversation reset. Ask a new question!");
             addStaffSystemMessage("Staff chat reset.");
         } catch (err) {
@@ -315,7 +434,7 @@
                 body: JSON.stringify({ suggestion: text }),
             });
 
-            const data = await response.json();
+            const data = await parseJsonResponse(response);
 
             if (response.ok) {
                 suggestionInput.value = "";
@@ -376,7 +495,7 @@
     setupToggle(refsToggle, refsList);
     setupToggle(suggestionsToggle, suggestionsContent);
     loadTools();
+    loadHistory();
     connectWS();
-    addSystemMessage("Welcome to BeamtimeHero! Ask questions about your beamline experiment.");
     addStaffSystemMessage("Send a message to beamline staff via Slack.");
 })();

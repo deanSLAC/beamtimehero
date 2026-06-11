@@ -53,10 +53,17 @@ body {
     color: var(--text-dark);
 }
 
-.header .subtitle {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    margin-left: auto;
+/* Visually hidden but available to screen readers */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 /* Main layout */
@@ -262,6 +269,12 @@ body {
     white-space: pre-wrap;
 }
 
+/* Markdown already expresses paragraphs as block elements; pre-wrap on
+   top of that doubles every blank line. */
+.message .markdown-content {
+    white-space: normal;
+}
+
 .message.user {
     align-self: flex-end;
     background-color: var(--ssrl-red);
@@ -310,6 +323,20 @@ body {
 }
 
 /* Typing indicator */
+/* Live tool-call progress, shown above the typing indicator */
+.tool-status {
+    align-self: flex-start;
+    padding: 4px 14px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-style: italic;
+    display: none;
+}
+
+.tool-status.visible {
+    display: block;
+}
+
 .typing-indicator {
     align-self: flex-start;
     padding: 10px 14px;

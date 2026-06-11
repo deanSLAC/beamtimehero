@@ -4,12 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BeamtimeHero</title>
-    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
-    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- Relative asset paths so the page works under any BASE_PATH prefix -->
+    <link rel="icon" href="static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="static/css/style.css">
 </head>
 <body>
     <div class="header">
-        <img src="/static/images/ssrl-logo.png" alt="SSRL">
+        <img src="static/images/ssrl-logo.png" alt="SSRL">
         <h1>Beamtime Hero</h1>
     </div>
 
@@ -49,16 +50,18 @@
             <div class="chat-container">
                 <div class="chat-header">
                     <span>
-                        <span id="status-dot" class="status-dot disconnected"></span>
+                        <span id="status-dot" class="status-dot disconnected" title="Disconnected"></span>
+                        <span id="status-text" class="sr-only">disconnected</span>
                         Hero
                     </span>
                     <button id="btn-reset" class="btn-reset">Reset</button>
                 </div>
 
-                <div class="messages" id="messages">
+                <div class="messages" id="messages" aria-live="polite">
                     <!-- Messages inserted here -->
                 </div>
 
+                <div id="tool-status" class="tool-status" aria-live="polite"></div>
                 <div id="typing-indicator" class="typing-indicator">
                     <span></span><span></span><span></span>
                 </div>
@@ -67,6 +70,7 @@
                     <textarea
                         id="chat-input"
                         placeholder="Ask about your experiment..."
+                        aria-label="Message the AI assistant"
                         rows="1"
                     ></textarea>
                     <button id="btn-send" class="btn-send">Send</button>
@@ -80,7 +84,7 @@
                     <span style="font-weight: 400; font-size: 0.8rem;">via Slack</span>
                 </div>
 
-                <div class="messages" id="staff-messages">
+                <div class="messages" id="staff-messages" aria-live="polite">
                     <!-- Staff messages inserted here -->
                 </div>
 
@@ -88,6 +92,7 @@
                     <textarea
                         id="staff-input"
                         placeholder="Message beamline staff..."
+                        aria-label="Message beamline staff"
                         rows="1"
                     ></textarea>
                     <button id="btn-staff-send" class="btn-send btn-staff">Send</button>
@@ -110,6 +115,7 @@
                 <textarea
                     id="suggestion-input"
                     placeholder="e.g. The LLM should be able to automatically detect and flag bad scans..."
+                    aria-label="Suggestion for improving the AI assistant"
                     rows="2"
                 ></textarea>
                 <button id="btn-suggestion-send" class="btn-send">Submit</button>
@@ -118,7 +124,8 @@
         </div>
     </div>
 
-    <script src="/static/js/marked.min.js"></script>
-    <script src="/static/js/app.js"></script>
+    <script src="static/js/marked.min.js"></script>
+    <script src="static/js/purify.min.js"></script>
+    <script src="static/js/app.js"></script>
 </body>
 </html>
