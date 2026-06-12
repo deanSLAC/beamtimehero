@@ -53,6 +53,38 @@ body {
     color: var(--text-dark);
 }
 
+/* Active data-directory indicator, right-aligned in the header */
+.data-dir {
+    margin-left: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 48ch;
+}
+
+.data-dir.unconfigured {
+    color: var(--ssrl-red);
+    font-weight: 600;
+}
+
+/* Warning strip shown when no data directory is configured */
+.config-banner {
+    background-color: #fff4d6;
+    border-bottom: 2px solid var(--ssrl-red);
+    color: #6b3b00;
+    padding: 10px 24px;
+    font-size: 0.88rem;
+    line-height: 1.4;
+    flex-shrink: 0;
+}
+
+.config-banner[hidden] {
+    display: none;
+}
+
 /* Visually hidden but available to screen readers */
 .sr-only {
     position: absolute;

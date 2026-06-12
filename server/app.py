@@ -287,6 +287,27 @@ async def health():
         "logs_dir": str(_cli_config.BL_LOGS_DIR),
         "using_sample_data": _cli_config.USING_SAMPLE_DATA,
         "using_sample_logs": _cli_config.USING_SAMPLE_LOGS,
+        "scan_dir_configured": _cli_config.SCAN_DIR_CONFIGURED,
+        "logs_dir_configured": _cli_config.LOGS_DIR_CONFIGURED,
+    }
+
+
+@app.get(f"{BASE_PATH}/api/status")
+async def status():
+    """Active data directory + whether it's configured, for the frontend.
+
+    `data_configured` is False when no real beamline scan directory has been
+    set (unset, missing, or no dated subdir). The sample-data fallback is
+    disabled for BTH, so in that state the scan/plot tools report no data
+    rather than serving demo scans — the UI surfaces a "configure me" banner.
+    """
+    from beamtimehero_cli import config as c
+
+    return {
+        "data_configured": c.SCAN_DIR_CONFIGURED,
+        "scan_dir": str(c.BL_SCAN_DIR),
+        "logs_configured": c.LOGS_DIR_CONFIGURED,
+        "logs_dir": str(c.BL_LOGS_DIR),
     }
 
 

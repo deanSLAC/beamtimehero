@@ -30,6 +30,10 @@
     const staffInputEl = document.getElementById("staff-input");
     const staffSendBtn = document.getElementById("btn-staff-send");
 
+    // Data-directory status elements
+    const dataDirEl = document.getElementById("data-dir");
+    const configBannerEl = document.getElementById("config-banner");
+
     // Sidebar elements
     const toolsToggle = document.getElementById("tools-toggle");
     const toolsList = document.getElementById("tools-list");
@@ -108,6 +112,47 @@
         }
     }
 
+    // --- Data directory status ---
+    function renderDataStatus(data) {
+        const configured = !!data.data_configured;
+        const dir = data.scan_dir || "";
+
+        if (dataDirEl) {
+            dataDirEl.classList.toggle("unconfigured", !configured);
+            if (configured) {
+                dataDirEl.textContent = "Data: " + dir;
+                dataDirEl.title = dir;
+            } else {
+                dataDirEl.textContent = "Data: not configured";
+                dataDirEl.title = dir ? "Looked in: " + dir : "No data directory set";
+            }
+        }
+
+        if (configBannerEl) {
+            if (configured) {
+                configBannerEl.hidden = true;
+                configBannerEl.textContent = "";
+            } else {
+                configBannerEl.hidden = false;
+                configBannerEl.textContent =
+                    "⚠ No beamline data directory is configured" +
+                    (dir ? " (looked in " + dir + ")" : "") +
+                    ". Scan, log, and plot tools have no data to read — " +
+                    "please ask beamline staff to configure the data directory.";
+            }
+        }
+    }
+
+    async function loadStatus() {
+        try {
+            const response = await fetch(`${BASE}/api/status`);
+            if (!response.ok) return;
+            renderDataStatus(await response.json());
+        } catch (err) {
+            console.error("Failed to load status:", err);
+        }
+    }
+
     // --- Connection status ---
     function setConnected(connected) {
         statusDot.classList.toggle("disconnected", !connected);
@@ -152,6 +197,9 @@
             console.log("WebSocket connected");
             // Re-sync the transcript: events sent while disconnected are gone.
             loadHistory();
+            // The data directory may have changed (e.g. staff !setdir) while
+            // this client was disconnected — refresh the indicator/banner.
+            loadStatus();
         };
 
         ws.onmessage = function (event) {
@@ -181,6 +229,8 @@
                 showToolStatus(null);
                 addSystemMessage("Conversation reset. Ask a new question!");
                 addStaffSystemMessage("Staff chat reset.");
+                // A reset often accompanies a scan-dir change (!setdir).
+                loadStatus();
             }
         };
 
@@ -499,6 +549,7 @@
     setupToggle(refsToggle, refsList);
     setupToggle(suggestionsToggle, suggestionsContent);
     loadTools();
+    loadStatus();
     loadHistory();
     connectWS();
     addStaffSystemMessage("Send a message to beamline staff via Slack.");
