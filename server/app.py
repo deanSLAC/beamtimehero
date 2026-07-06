@@ -39,11 +39,48 @@ from claude_cli_backend import ClaudeCLIClient
 from conversation import ConversationService, new_message_id
 from slack_bridge import SlackBridge
 
-logging.basicConfig(
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-    level=logging.INFO,
-)
+def _setup_logging() -> Path:
+    """Log to the console plus a fresh timestamped file per run.
+
+    Each server run gets its own ``logs/beamtimehero_<timestamp>.log`` so runs
+    never clobber one another. ``logs/`` is gitignored. uvicorn configures its
+    own loggers with ``propagate=False``, so the file handler is attached to
+    them directly to capture startup/access lines in the same run log.
+    """
+    log_dir = PROJECT_ROOT / "logs"
+    log_dir.mkdir(exist_ok=True)
+    log_file = log_dir / f"beamtimehero_{datetime.now():%Y%m%d_%H%M%S}.log"
+
+    fmt = logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setFormatter(fmt)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(fmt)
+
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    # Guard against duplicate handlers if the module is re-imported (e.g. under
+    # uvicorn's reloader).
+    if not any(isinstance(h, logging.FileHandler) for h in root.handlers):
+        root.addHandler(stream_handler)
+        root.addHandler(file_handler)
+
+    # uvicorn's loggers don't propagate to root, so attach the file handler
+    # where their records surface: the parent `uvicorn` logger (which
+    # `uvicorn.error` bubbles up to) and `uvicorn.access` (which has its own
+    # handler and doesn't bubble). Their existing console handlers are left
+    # intact, and propagation is untouched, so each line is logged once.
+    for name in ("uvicorn", "uvicorn.access"):
+        ulog = logging.getLogger(name)
+        if not any(isinstance(h, logging.FileHandler) for h in ulog.handlers):
+            ulog.addHandler(file_handler)
+
+    return log_file
+
+
+_LOG_FILE = _setup_logging()
 logger = logging.getLogger(__name__)
+logger.info("Logging this run to %s", _LOG_FILE)
 
 # --- Global state ---
 slack_bridge = SlackBridge()

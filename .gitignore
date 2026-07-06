@@ -11,3 +11,4 @@ dist/
 build/
 user_suggestions/
 data/
+logs/
