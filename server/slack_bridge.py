@@ -59,30 +59,47 @@ class SlackBridge:
         self._on_setdir = callback
 
     def start(self):
-        """Start Slack bot in a background thread."""
+        """Start Slack bot in a background thread.
+
+        All Slack network I/O (App construction — which does an auth.test —
+        plus the explicit auth_test and the Socket Mode connect) happens on
+        the background thread, never on the caller's thread. This keeps the
+        FastAPI startup lifespan from blocking when Slack is slow or
+        unreachable, so the web server always binds its port regardless of
+        Slack connectivity. The bridge simply attaches once Slack is
+        reachable; outbound post_* calls no-op until then (they guard on
+        self._app).
+        """
         if not SLACK_BOT_TOKEN or not SLACK_APP_TOKEN:
             logger.warning("Slack tokens not configured — Slack bridge disabled")
             return
 
-        self._app = App(token=SLACK_BOT_TOKEN)
-        self._register_handlers()
-
-        # Get our own bot user ID so we can ignore our own messages
-        try:
-            auth = self._app.client.auth_test()
-            self._bot_user_id = auth["user_id"]
-        except Exception as e:
-            logger.warning("Could not get bot user ID: %s", e)
-
-        self._handler = SocketModeHandler(self._app, SLACK_APP_TOKEN)
-
-        thread = threading.Thread(target=self._handler.start, daemon=True)
+        thread = threading.Thread(target=self._run, daemon=True)
         thread.start()
-        logger.info(
-            "Slack bridge started (LLM: %s, Users: %s)",
-            SLACK_LLM_CHANNEL_ID,
-            SLACK_USERS_CHANNEL_ID,
-        )
+
+    def _run(self):
+        """Connect to Slack and run the Socket Mode loop (background thread)."""
+        try:
+            self._app = App(token=SLACK_BOT_TOKEN)
+            self._register_handlers()
+
+            # Get our own bot user ID so we can ignore our own messages
+            try:
+                auth = self._app.client.auth_test()
+                self._bot_user_id = auth["user_id"]
+            except Exception as e:
+                logger.warning("Could not get bot user ID: %s", e)
+
+            self._handler = SocketModeHandler(self._app, SLACK_APP_TOKEN)
+            logger.info(
+                "Slack bridge started (LLM: %s, Users: %s)",
+                SLACK_LLM_CHANNEL_ID,
+                SLACK_USERS_CHANNEL_ID,
+            )
+            # Blocks in this thread, running the Socket Mode receive loop.
+            self._handler.start()
+        except Exception as e:
+            logger.error("Slack bridge failed to start (Slack disabled): %s", e)
 
     def _resolve_staff_name(self, user_id: str, client) -> str:
         """Look up a Slack user's display name."""
