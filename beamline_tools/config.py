@@ -19,14 +19,6 @@ os.environ.setdefault("SPEC_MOCK", "0")
 os.environ.setdefault("SPEC_TRANSPORT", "screen")
 os.environ.setdefault("BEAMTIMEHERO_DATA_DIR", str(PROJECT_ROOT / "data"))
 
-# BTH runs on the beamline computer, where serving packaged demo data as if
-# it were live would mislead users. Disable upstream's sample-data fallback
-# by default: an unconfigured BL_SCAN_DIR/BL_LOGS_DIR then surfaces as "not
-# configured" (and tools report no data) instead of silently returning demo
-# scans. Operators can set BEAMTIMEHERO_NO_SAMPLE_FALLBACK=0 to re-enable the
-# fallback for a local UI demo.
-os.environ.setdefault("BEAMTIMEHERO_NO_SAMPLE_FALLBACK", "1")
-
 # BL_SCAN_DIR / BL_LOGS_DIR come from the beamline host's .env; do not
 # override here.
 

@@ -322,8 +322,6 @@ async def health():
         "claude_binary": await asyncio.to_thread(claude_client.health_check),
         "scan_dir": str(_cli_config.BL_SCAN_DIR),
         "logs_dir": str(_cli_config.BL_LOGS_DIR),
-        "using_sample_data": _cli_config.USING_SAMPLE_DATA,
-        "using_sample_logs": _cli_config.USING_SAMPLE_LOGS,
         "scan_dir_configured": _cli_config.SCAN_DIR_CONFIGURED,
         "logs_dir_configured": _cli_config.LOGS_DIR_CONFIGURED,
     }
