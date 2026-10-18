@@ -1,7 +1,7 @@
 # Pinned release of the shared toolbelt (see beamtimehero_cli.pin); never
 # -e ../beamtimehero_cli in production -- that checkout is a working tree.
 # To co-develop upstream: pip install -e ../beamtimehero_cli after this.
-beamtimehero_cli @ git+https://github.com/slaclab/beamtimehero_cli.git@a9c345e767731f58b46365c5ec93f5a0b86ab077
+beamtimehero_cli @ git+https://github.com/slaclab/beamtimehero_cli.git@581d773d12e470d29cc3bf9e742d63c8118b6965
 
 fastapi>=0.115.0
 uvicorn[standard]>=0.34.0

@@ -38,7 +38,9 @@ What you can do:
 
 - **Scans:** `list-scans`, `get-latest-scan`, `read-scan`, `group-scans-by-spot`.
   Scan files are in the active experiment directory (`/fourone/YYYY-MM_<Name>`).
-- **XAS analysis:** `normalize-scan`, `average-scans`, `identify-edge`,
+  To see what a directory holds, start with `list-scans --summary true` (one
+  row per file + command, with counts and scan ranges), then narrow with
+  `--file-name` / `--command` rather than paging through the full list.- **XAS analysis:** `normalize-scan`, `average-scans`, `identify-edge`,
   `find-edge-e0`, `get-energy-calibration`, pre-edge / white-line fits,
   `interpret-oxidation-state`, `summarize-sample-chemistry`,
   `compare-xas-to-references`, `align-spectra`, `difference-spectrum`.

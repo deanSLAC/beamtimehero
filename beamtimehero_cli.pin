@@ -6,4 +6,8 @@
 # 2026-10-17: a9c345e on master (fast-forward over 51bd763, autonomous_fourone's
 # pin): BTH_SPEC_LOG_FILE_PATTERN station default, so BL4-1's log_fourone_* logs
 # are found. BL15-2 behaviour unchanged.
-a9c345e767731f58b46365c5ec93f5a0b86ab077
+#
+# 2026-10-18: 581d773 on feat/list-scans-filters (fast-forward over a9c345e):
+# list-scans --summary / --file-name / --command, so the agent can see what a
+# beamtime holds in one call. Plain listing unchanged.
+581d773d12e470d29cc3bf9e742d63c8118b6965
