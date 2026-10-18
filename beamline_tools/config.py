@@ -1,9 +1,12 @@
-"""BTH config: set env defaults, then re-export upstream config.
+"""BTH config: set the station's env defaults, then re-export upstream config.
 
 Must be imported *before* any `beamtimehero_cli` module: upstream
 `beamtimehero_cli.config` reads `SPEC_MOCK`, `SPEC_TRANSPORT`,
 `BL_SCAN_DIR`, `BL_LOGS_DIR`, and `BEAMTIMEHERO_DATA_DIR` at module-import
 time, so changing them after the first upstream import has no effect.
+
+Defaults come from the station module (`beamline_tools.station`); values
+already in the environment (the host's .env) win.
 """
 
 from __future__ import annotations
@@ -13,14 +16,12 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# BTH runs on the beamline computer talking to a live SPEC session via GNU
-# screen. Upstream defaults to mock + tcp, so override before importing.
-os.environ.setdefault("SPEC_MOCK", "0")
-os.environ.setdefault("SPEC_TRANSPORT", "screen")
-os.environ.setdefault("BEAMTIMEHERO_DATA_DIR", str(PROJECT_ROOT / "data"))
+from beamline_tools.station import STATION  # noqa: E402
 
-# BL_SCAN_DIR / BL_LOGS_DIR come from the beamline host's .env; do not
-# override here.
+# BTH runs on the beamline computer talking to a live SPEC session.
+# Upstream defaults to mock, so override before importing.
+for _k, _v in STATION.ENV_DEFAULTS.items():
+    os.environ.setdefault(_k, _v)
 
 from beamtimehero_cli import config as _upstream  # noqa: E402
 

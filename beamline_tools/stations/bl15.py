@@ -1,11 +1,49 @@
-"""BTH agent profile — curated CLI surface for the BeamtimeHero web chat agent.
+"""BL15-2 station: agent persona, `bth` profile, reference docs, UI.
 
-Each kebab leaf maps to the canonical ``(tree, ..., name)`` path in
-``beamtimehero_cli``'s master tool catalog. Registered with the upstream
-profile mechanism by ``beamline_tools.cli``; surfaces as the top-level
-``beamtimehero bth`` branch.
+The default station (``BTH_STATION`` unset). Everything here is what
+BeamtimeHero was before stations existed; change it only for BL15-2.
+
+``PROFILE`` maps each kebab leaf to the canonical ``(tree, ..., name)``
+path in ``beamtimehero_cli``'s master tool catalog. Registered with the
+upstream profile mechanism by ``beamline_tools.cli``; surfaces as the
+top-level ``beamtimehero bth`` branch.
 """
 from __future__ import annotations
+
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[2]
+
+NAME = "bl15"
+BEAMLINE = "SSRL BL15-2"
+
+# `claude -p --agent <AGENT> --settings <SETTINGS>` (paths relative to the repo)
+AGENT = "beamline-bth"
+SETTINGS = "agent.settings.json"
+
+# Env defaults applied (setdefault) before any beamtimehero_cli import.
+# BL15-2 talks to its live SPEC session via GNU screen; BL_SCAN_DIR /
+# BL_LOGS_DIR come from the host's .env.
+ENV_DEFAULTS: dict[str, str] = {
+    "SPEC_MOCK": "0",
+    "SPEC_TRANSPORT": "screen",
+    "BEAMTIMEHERO_DATA_DIR": str(_ROOT / "data"),
+    "BEAMTIMEHERO_LOG_DIR": str(_ROOT / "logs"),
+    "BEAMTIMEHERO_SUGGESTIONS_DIR": str(_ROOT / "user_suggestions"),
+}
+
+# (name, path relative to repo, description) for `beamtimehero ref`.
+REFDOCS: list[tuple[str, str, str]] = [
+    ("spec-commands", "stations/bl15/context/BL15-2_SPEC_Reference.txt",
+     "BL15-2 SPEC beamline control command reference."),
+    ("user-operations", "stations/bl15/context/BL15-2_user_reference.txt",
+     "BL15-2 user operations quick reference."),
+    ("cryostat-procedures", "stations/bl15/context/cryostat_procedures.txt",
+     "Liquid helium cryostat operating procedures and safety rules."),
+]
+
+# Upstream's bundled refdocs to keep listed; None keeps all of them.
+UPSTREAM_REFDOCS: tuple[str, ...] | None = None
 
 PROFILE = {
     "name": "bth",
@@ -64,3 +102,49 @@ PROFILE = {
         "recent-actions":            ("db", "recent_actions"),
     },
 }
+
+# Sidebar category order + membership (canonical tool names). Tools not
+# listed here fall under "Other".
+TOOL_CATEGORIES = [
+    (
+        "Scan Data & Analysis",
+        [
+            "get_latest_scan", "list_scans", "read_scan",
+            "get_active_counter", "get_scan_deadtime",
+            "normalize_scan", "average_scans",
+            "analyze_convergence", "analyze_efficiency",
+            "analyze_feature_evolution", "analyze_per_spot",
+            "group_scans_by_spot",
+        ],
+    ),
+    (
+        "Plots",
+        [
+            "plot_scan", "plot_averaged_scans", "plot_data",
+            "plot_scan_stack", "plot_first_half_vs_second_half",
+            "plot_running_average", "plot_feature_evolution",
+        ],
+    ),
+    (
+        "Beamline Logs",
+        ["get_latest_log_entries", "search_logs", "list_logs"],
+    ),
+    (
+        "Files & Macros",
+        [
+            "list_files", "read_file", "write_summary",
+            "write_macro", "evaluate_spec_macro", "save_plan",
+        ],
+    ),
+    (
+        "SPEC State (read-only)",
+        [
+            "get_motor_config", "get_counter_config",
+            "read_all_positions", "read_motor_position",
+            "get_current_datafile", "get_scan_number",
+            "get_beam_status", "get_beam_size",
+            "get_counts", "get_counter",
+            "get_element", "get_anchor", "get_plotselected_counter",
+        ],
+    ),
+]

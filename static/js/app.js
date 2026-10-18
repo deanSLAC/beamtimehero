@@ -114,6 +114,12 @@
 
     // --- Data directory status ---
     function renderDataStatus(data) {
+        const beamlineEl = document.getElementById("beamline-name");
+        if (beamlineEl && data.beamline) {
+            beamlineEl.textContent = data.beamline;
+            document.title = "BeamtimeHero · " + data.beamline;
+        }
+
         const configured = !!data.data_configured;
         const dir = data.scan_dir || "";
 

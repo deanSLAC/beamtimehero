@@ -1,0 +1,34 @@
+# Slack app manifest for the BL4-1 BeamtimeHero bot.
+# api.slack.com/apps -> Create New App -> "From a manifest" -> pick the
+# workspace -> paste this (YAML tab). See README "Slack setup".
+display_information:
+  name: BeamtimeHero BL4-1
+  description: AI assistant for SSRL BL4-1 users; mirrors chats so staff can join.
+features:
+  bot_user:
+    display_name: BeamtimeHero 4-1
+    always_online: true
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - users:read
+      - channels:history
+      - groups:history
+      - im:history
+      - im:read
+settings:
+  event_subscriptions:
+    bot_events:
+      - message.channels
+      - message.groups
+      - message.im
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false

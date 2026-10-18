@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import beamline_tools.config  # noqa: F401 — set env before upstream import
 
-from beamline_tools.bth_profile import PROFILE as _BTH_PROFILE
+from beamline_tools.station import STATION
 from beamtimehero_cli.tool_catalog import TOOL_DEFINITIONS
 from beamtimehero_cli.tool_catalog.categorize import categorize
 
@@ -30,7 +30,7 @@ def _build_descriptions() -> dict[str, str]:
         by_path[categorize(tdef) + (name,)] = tdef
 
     out: dict[str, str] = {}
-    for _alias, canonical in (_BTH_PROFILE.get("aliases") or {}).items():
+    for _alias, canonical in (STATION.PROFILE.get("aliases") or {}).items():
         tdef = by_path.get(tuple(canonical))
         if tdef is None:
             continue

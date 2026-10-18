@@ -7,7 +7,9 @@ loudly instead.
 """
 import beamline_tools.config  # noqa: F401 — env defaults before upstream import
 
-from beamline_tools.bth_profile import PROFILE
+from beamline_tools.station import STATION
+
+PROFILE = STATION.PROFILE
 from beamtimehero_cli.tool_catalog import TOOL_DEFINITIONS
 from beamtimehero_cli.tool_catalog.categorize import categorize
 

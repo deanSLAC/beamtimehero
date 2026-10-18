@@ -1,7 +1,7 @@
 """BTH `beamtimehero` CLI: upstream parser + the `bth` agent profile.
 
-The wrapper composes upstream's CLI helpers and registers the BTH
-profile (`beamline_tools.bth_profile`). The profile is a curated view
+The wrapper composes upstream's CLI helpers and registers the station's
+BTH profile (`beamline_tools.stations.<BTH_STATION>.PROFILE`). The profile is a curated view
 of the master catalog whose kebab leaves alias canonical
 `(tree, ..., name)` paths. Discovery: `beamtimehero --list-profiles`,
 `beamtimehero bth --help`.
@@ -38,18 +38,11 @@ from beamtimehero_cli.cli.__main__ import (
 from beamtimehero_cli.cli.profiles import PROFILES, register_profile
 from beamtimehero_cli.tool_catalog import TOOL_DEFINITIONS
 
-from beamline_tools.bth_profile import PROFILE as _BTH_PROFILE
+from beamline_tools.station import STATION
+
+_BTH_PROFILE = STATION.PROFILE
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-_BTH_REFDOCS: list[tuple[str, str, str]] = [
-    ("spec-commands", "context/BL15-2_SPEC_Reference.txt",
-     "BL15-2 SPEC beamline control command reference."),
-    ("user-operations", "context/BL15-2_user_reference.txt",
-     "BL15-2 user operations quick reference."),
-    ("cryostat-procedures", "context/cryostat_procedures.txt",
-     "Liquid helium cryostat operating procedures and safety rules."),
-]
 
 
 _refdocs_registered = False
@@ -57,12 +50,19 @@ _profile_registered = False
 
 
 def register_refdocs() -> None:
-    """Idempotent: register BTH's local context docs with upstream's refdoc
+    """Idempotent: register the station's local docs with upstream's refdoc
     registry. Safe to call from app startup as well as the CLI builder."""
     global _refdocs_registered
     if _refdocs_registered:
         return
-    for name, rel_path, description in _BTH_REFDOCS:
+    keep = STATION.UPSTREAM_REFDOCS
+    if keep is not None:
+        # Upstream bundles developer docs (agent-integration, profiles, ...)
+        # that would only clutter a user-facing agent's `ref --list`.
+        # refdocs has no unregister API, so prune its registry directly.
+        for name in [n for n, _ in refdocs.list_docs() if n not in keep]:
+            del refdocs._DOCS[name]
+    for name, rel_path, description in STATION.REFDOCS:
         refdocs.register_doc(name, PROJECT_ROOT / rel_path, description)
     _refdocs_registered = True
 

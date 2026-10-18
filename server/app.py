@@ -42,13 +42,14 @@ from slack_bridge import SlackBridge
 def _setup_logging() -> Path:
     """Log to the console plus a fresh timestamped file per run.
 
-    Each server run gets its own ``logs/beamtimehero_<timestamp>.log`` so runs
-    never clobber one another. ``logs/`` is gitignored. uvicorn configures its
+    Each server run gets its own ``beamtimehero_<timestamp>.log`` in
+    ``BEAMTIMEHERO_LOG_DIR`` (station default; ``logs/`` in the repo at
+    BL15-2, gitignored) so runs never clobber one another. uvicorn configures its
     own loggers with ``propagate=False``, so the file handler is attached to
     them directly to capture startup/access lines in the same run log.
     """
-    log_dir = PROJECT_ROOT / "logs"
-    log_dir.mkdir(exist_ok=True)
+    log_dir = Path(os.environ.get("BEAMTIMEHERO_LOG_DIR") or PROJECT_ROOT / "logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / f"beamtimehero_{datetime.now():%Y%m%d_%H%M%S}.log"
 
     fmt = logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -316,8 +317,11 @@ app.mount(
 async def health():
     from beamtimehero_cli import config as _cli_config
 
+    from beamline_tools.station import STATION
+
     return {
         "status": "ok",
+        "station": STATION.NAME,
         "llm_configured": llm_configured(),
         "claude_binary": await asyncio.to_thread(claude_client.health_check),
         "scan_dir": str(_cli_config.BL_SCAN_DIR),
@@ -337,8 +341,11 @@ async def status():
     rather than serving demo scans — the UI surfaces a "configure me" banner.
     """
     from beamtimehero_cli import config as c
+    from beamline_tools.station import STATION
 
     return {
+        "station": STATION.NAME,
+        "beamline": STATION.BEAMLINE,
         "data_configured": c.SCAN_DIR_CONFIGURED,
         "scan_dir": str(c.BL_SCAN_DIR),
         "logs_configured": c.LOGS_DIR_CONFIGURED,
@@ -429,52 +436,6 @@ async def history():
     return {"messages": conversation.get_history()}
 
 
-# Sidebar category order + membership. Tools not listed here fall under "Other".
-TOOL_CATEGORIES = [
-    (
-        "Scan Data & Analysis",
-        [
-            "get_latest_scan", "list_scans", "read_scan",
-            "get_active_counter", "get_scan_deadtime",
-            "normalize_scan", "average_scans",
-            "analyze_convergence", "analyze_efficiency",
-            "analyze_feature_evolution", "analyze_per_spot",
-            "group_scans_by_spot",
-        ],
-    ),
-    (
-        "Plots",
-        [
-            "plot_scan", "plot_averaged_scans", "plot_data",
-            "plot_scan_stack", "plot_first_half_vs_second_half",
-            "plot_running_average", "plot_feature_evolution",
-        ],
-    ),
-    (
-        "Beamline Logs",
-        ["get_latest_log_entries", "search_logs", "list_logs"],
-    ),
-    (
-        "Files & Macros",
-        [
-            "list_files", "read_file", "write_summary",
-            "write_macro", "evaluate_spec_macro", "save_plan",
-        ],
-    ),
-    (
-        "SPEC State (read-only)",
-        [
-            "get_motor_config", "get_counter_config",
-            "read_all_positions", "read_motor_position",
-            "get_current_datafile", "get_scan_number",
-            "get_beam_status", "get_beam_size",
-            "get_counts", "get_counter",
-            "get_element", "get_anchor", "get_plotselected_counter",
-        ],
-    ),
-]
-
-
 @app.get(f"{BASE_PATH}/api/tools")
 async def get_tools():
     """Return available tools (grouped by category) and reference docs for the frontend sidebar."""
@@ -485,7 +446,9 @@ async def get_tools():
 
     categorized = []
     seen = set()
-    for category, names in TOOL_CATEGORIES:
+    from beamline_tools.station import STATION
+
+    for category, names in STATION.TOOL_CATEGORIES:
         items = [
             {"name": n, "description": by_name[n]} for n in names if n in by_name
         ]
@@ -551,8 +514,10 @@ async def submit_suggestion(payload: dict):
     three_word = three_word[:30]
     valid = 1 if len(raw_text) >= 10 else 0
 
-    suggestions_dir = PROJECT_ROOT / "user_suggestions"
-    suggestions_dir.mkdir(exist_ok=True)
+    suggestions_dir = Path(
+        os.environ.get("BEAMTIMEHERO_SUGGESTIONS_DIR") or PROJECT_ROOT / "user_suggestions"
+    )
+    suggestions_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"suggestion_{three_word}_{timestamp}.json"

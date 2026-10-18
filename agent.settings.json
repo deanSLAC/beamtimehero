@@ -9,7 +9,7 @@
       "Bash(./scripts/beamtimehero ref *)",
       "Bash(./scripts/beamtimehero bth --help)",
       "Bash(./scripts/beamtimehero bth *)",
-      "Read(context/**)",
+      "Read(stations/bl15/context/**)",
       "Read(data/**)"
     ],
     "deny": [

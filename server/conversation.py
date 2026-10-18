@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
+from beamline_tools.station import STATION
 from claude_cli_backend import ClaudeCLIClient, send_and_collect
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,7 @@ class ConversationService:
     turn after uses `--resume <uuid>`. To reset, build a new instance.
     """
 
-    AGENT_NAME = "beamline-bth"
+    AGENT_NAME = STATION.AGENT
 
     def __init__(
         self,

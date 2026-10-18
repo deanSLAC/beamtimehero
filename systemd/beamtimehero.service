@@ -1,0 +1,23 @@
+# BeamtimeHero (http://127.0.0.1:8742), started at boot. The station
+# (BTH_STATION) and every other setting come from the repo's .env.
+# Install (root): systemd/install.sh   - symlinks this file and enables it.
+[Unit]
+Description=BeamtimeHero: AI beamline assistant web chat (port 8742)
+RequiresMountsFor=/usr/local/projects /fourone
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=fourone
+Group=fourone
+# files it writes under /fourone/beamtimehero stay group-writable
+UMask=0002
+WorkingDirectory=/usr/local/projects/beamtimehero
+ExecStart=/usr/local/projects/beamtimehero/run.sh
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

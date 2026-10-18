@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "Runtime allowlist for the BL4-1 BeamtimeHero embedded agent (BTH_STATION=bl41). Loaded by `claude -p --settings agent.settings.bl41.json` in server/claude_cli_backend.py. Read-only: the bl41 `bth` profile carries no writers, the agent reads docs via `ref`, and every file/web/agent tool is denied. NOT auto-loaded by any other Claude Code session in this directory.",
+  "permissions": {
+    "allow": [
+      "Bash(./scripts/beamtimehero --help)",
+      "Bash(./scripts/beamtimehero -h)",
+      "Bash(./scripts/beamtimehero --list-profiles)",
+      "Bash(./scripts/beamtimehero ref *)",
+      "Bash(./scripts/beamtimehero bth --help)",
+      "Bash(./scripts/beamtimehero bth *)"
+    ],
+    "deny": [
+      "Read",
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch",
+      "Agent",
+      "Bash(./scripts/beamtimehero spec-write *)",
+      "Bash(./scripts/beamtimehero db *)",
+      "Bash(./scripts/beamtimehero tool *)",
+      "Bash(./scripts/beamtimehero spec-read *)",
+      "Bash(./scripts/beamtimehero spec-file *)",
+      "Bash(./scripts/beamtimehero cherfd *)",
+      "Bash(./scripts/beamtimehero cherfd-write *)",
+      "Bash(./scripts/beamtimehero s3df *)",
+      "Bash(./scripts/beamtimehero slack *)",
+      "Bash(./scripts/beamtimehero research *)",
+      "Bash(rm *)",
+      "Bash(rmdir *)",
+      "Bash(mv *)",
+      "Bash(cp *)",
+      "Bash(tee *)",
+      "Bash(git *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(ssh *)",
+      "Bash(screen *)",
+      "Bash(caput *)",
+      "Bash(python *)",
+      "Bash(python3 *)"
+    ]
+  }
+}

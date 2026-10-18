@@ -5,7 +5,7 @@ output. Sessions are persisted by Claude Code on disk — we mint a UUID,
 pass it as `--session-id` on the first turn and `--resume <uuid>` on
 every turn after.
 
-Tool gating lives in `.claude/agents/beamline-bth.md` (persona + tool surface) and `agent.settings.json` (runtime allowlist, loaded by `--settings` so it does not affect any other Claude Code session running in this directory).
+Tool gating lives in the station's agent file (`.claude/agents/<STATION.AGENT>.md`: persona + tool surface) and settings file (`STATION.SETTINGS`, e.g. `agent.settings.json`: runtime allowlist, loaded by `--settings` so it does not affect any other Claude Code session running in this directory).
 This module only:
   - builds the subprocess argv + env
   - feeds the user message in via stream-json on stdin
@@ -28,13 +28,23 @@ import uuid
 from pathlib import Path
 from typing import Callable, Optional
 
-from config import CLAUDE_BIN, PROJECT_ROOT, gateway_config
+from config import (
+    CLAUDE_BIN,
+    PROJECT_ROOT,
+    active_gateway_key,
+    gateway_config,
+    looks_rate_limited,
+    note_gateway_rate_limited,
+)
 from mlflow_logging import run as mlflow_run
+
+from beamline_tools.station import STATION
 
 logger = logging.getLogger(__name__)
 
 CLAUDE_PLOTS_ROOT = Path(
-    os.getenv("CLAUDE_PLOTS_ROOT", str(PROJECT_ROOT / "data" / ".claude" / "plots"))
+    os.getenv("CLAUDE_PLOTS_ROOT")
+    or Path(os.getenv("BEAMTIMEHERO_DATA_DIR") or PROJECT_ROOT / "data") / ".claude" / "plots"
 )
 
 # Hard per-turn wall clock. A hung gateway or stuck `claude` process must
@@ -190,22 +200,28 @@ def _scrape_session_plots_dir(plots_dir: Path, since: float = 0.0) -> list[str]:
 # Gateway env
 # =============================================================================
 
-def _gateway_env() -> dict[str, str]:
+def _gateway_env() -> tuple[dict[str, str], str | None]:
     """Build the env overrides for the spawned `claude` subprocess.
 
-    Resolves `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` from the
-    gateway block; passes the rest of the prefixed vars through
-    (e.g. `ANTHROPIC_DEFAULT_SONNET_MODEL`, `DISABLE_PROMPT_CACHING`).
+    Resolves `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` (the active key:
+    primary unless it is cooling down from a rate limit) and
+    `ANTHROPIC_MODEL` (the gateway's MODEL_ALIAS, if set) from the gateway
+    block; passes the rest of the prefixed vars through (e.g.
+    `ANTHROPIC_DEFAULT_SONNET_MODEL`, `NO_PROXY`). Returns the overrides and
+    the active key's name, for rate-limit failover.
     """
     gw = gateway_config()
     overrides: dict[str, str] = {}
     if gw.get("url"):
         overrides["ANTHROPIC_BASE_URL"] = gw["url"]
-    if gw.get("key"):
-        overrides["ANTHROPIC_AUTH_TOKEN"] = gw["key"]
+    active = active_gateway_key()
+    if active:
+        overrides["ANTHROPIC_AUTH_TOKEN"] = active[1]
+    if gw.get("model_alias"):
+        overrides["ANTHROPIC_MODEL"] = gw["model_alias"]
     for k, v in (gw.get("env") or {}).items():
         overrides[k] = v
-    return overrides
+    return overrides, active[0] if active else None
 
 
 # =============================================================================
@@ -238,7 +254,7 @@ def _run_claude(
         # file so it does NOT leak into developer sessions running in
         # this dir (./.claude/settings.json is intentionally empty).
         # Path is relative to working_dir (=PROJECT_ROOT).
-        "--settings", "agent.settings.json",
+        "--settings", STATION.SETTINGS,
         "--verbose",
     ]
     if is_new_session:
@@ -248,7 +264,8 @@ def _run_claude(
 
     env = os.environ.copy()
     env["BEAMTIMEHERO_PLOTS_DIR"] = str(plots_dir)
-    env.update(_gateway_env())
+    gw_env, key_name = _gateway_env()
+    env.update(gw_env)
 
     logger.info(
         "Spawning claude (agent=%s, gateway=%s, session=%s, new=%s)",
@@ -298,6 +315,7 @@ def _run_claude(
     watchdog.start()
 
     result_text: str = ""
+    result_is_error = False
     assistant_text_chunks: list[str] = []
     tool_calls: list[dict] = []
     tool_use_by_id: dict[str, dict] = {}
@@ -379,7 +397,8 @@ def _run_claude(
 
             elif etype == "result":
                 result_text = evt.get("result") or ""
-                if evt.get("is_error"):
+                result_is_error = bool(evt.get("is_error"))
+                if result_is_error:
                     logger.warning("Claude reported result-level error: %s", evt)
                 usage_stats = {
                     k: evt[k]
@@ -411,6 +430,10 @@ def _run_claude(
         raise RuntimeError(
             f"claude turn timed out after {TURN_TIMEOUT_SECONDS:.0f}s and was killed"
         )
+    if key_name and (looks_rate_limited(stderr_text)
+                     or (result_is_error and looks_rate_limited(result_text))):
+        logger.warning("Gateway key %s hit a rate limit; next turn fails over", key_name)
+        note_gateway_rate_limited(key_name)
     if rc != 0:
         snippet = stderr_text.strip()[:500] or "<empty stderr>"
         raise RuntimeError(f"claude exited with code {rc}: {snippet}")
@@ -434,7 +457,7 @@ def send_and_collect(
     *,
     source: str,
     is_new_session: bool,
-    agent: str = "beamline-bth",
+    agent: str = STATION.AGENT,
     staff_name: Optional[str] = None,
     on_tool_start: Optional[Callable[[list[str]], None]] = None,
 ) -> tuple[str, list[dict], list[str]]:
@@ -467,6 +490,7 @@ def send_and_collect(
                 import mlflow
 
                 mlflow.log_param("backend", "claude_cli")
+                mlflow.log_param("station", STATION.NAME)
                 mlflow.log_param("source", source)
                 mlflow.log_param("agent", agent)
                 if staff_name:
