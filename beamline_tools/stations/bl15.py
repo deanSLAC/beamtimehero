@@ -148,3 +148,7 @@ TOOL_CATEGORIES = [
         ],
     ),
 ]
+
+# Sidebar "Try asking" prompts; empty hides the box. None yet: examples
+# must be run against this station's agent and data before listing them.
+EXAMPLE_PROMPTS: list[str] = []

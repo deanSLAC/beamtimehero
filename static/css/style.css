@@ -134,6 +134,45 @@ body {
     color: var(--ssrl-red);
 }
 
+.intro-examples {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-color);
+}
+
+.intro-examples-title {
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.intro-examples ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.example-prompt {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 6px;
+    margin: 0 -6px;
+    font: inherit;
+    font-style: italic;
+    color: var(--ssrl-red);
+    cursor: pointer;
+}
+
+.example-prompt:hover,
+.example-prompt:focus-visible {
+    background-color: var(--ssrl-beige);
+    color: var(--ssrl-red-hover);
+}
+
 .sidebar-section {
     background-color: var(--card-bg);
     border: 1px solid var(--border-color);
@@ -476,6 +515,10 @@ body {
 
 .staff-pane .chat-header {
     color: #1b7a1b;
+}
+
+#btn-staff-clear {
+    margin-left: 8px;
 }
 
 /* Plot images */

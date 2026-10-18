@@ -288,3 +288,18 @@ TOOL_CATEGORIES = [
         ["list_files", "read_file", "recent_actions"],
     ),
 ]
+
+# Sidebar "Try asking" prompts (click fills the chat box). Each was run
+# through the agent against real BL4-1 data/services and exercises the
+# tools above; re-check them when the profile changes. Not listed: averaging,
+# convergence and chi(k)/FT prompts. Those tools read SPEC step scans only,
+# not cscan sweeps (BL4-1's default), so they fail on typical user data.
+EXAMPLE_PROMPTS: list[str] = [
+    "Plot my latest scan and tell me whether the data look good.",
+    "What edge am I measuring, and where is E0?",
+    "Is there drift or sample damage across my scans?",
+    "Show me the results of my last cscan sweep.",
+    "Were there any errors or warnings in the SPEC log in the last hour?",
+    "Is the beam up, and is the Ge detector dead time OK?",
+    "Is the cscan server ready for my next scan?",
+]

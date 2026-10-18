@@ -26,6 +26,11 @@
                 It can query your scan data, logs, and reference documents.
                 If you ask it about your data, the model can see your data.
                 Beamline staff can read and collaborate with your AI conversation via Slack.
+                <!-- Station's example prompts (from /api/status); click to fill the chat box -->
+                <div id="examples" class="intro-examples" hidden>
+                    <div class="intro-examples-title">Try asking</div>
+                    <ul id="examples-list"></ul>
+                </div>
             </div>
 
             <div class="sidebar-section">
@@ -85,7 +90,10 @@
             <div class="chat-container staff-pane">
                 <div class="chat-header">
                     <span>Staff Chat</span>
-                    <span style="font-weight: 400; font-size: 0.8rem;">via Slack</span>
+                    <span>
+                        <span style="font-weight: 400; font-size: 0.8rem;">via Slack</span>
+                        <button id="btn-staff-clear" class="btn-reset" title="Clear this pane (this screen only; Slack is unchanged)">Clear</button>
+                    </span>
                 </div>
 
                 <div class="messages" id="staff-messages" aria-live="polite">

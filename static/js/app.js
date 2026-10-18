@@ -29,6 +29,7 @@
     const staffMessagesEl = document.getElementById("staff-messages");
     const staffInputEl = document.getElementById("staff-input");
     const staffSendBtn = document.getElementById("btn-staff-send");
+    const staffClearBtn = document.getElementById("btn-staff-clear");
 
     // Data-directory status elements
     const dataDirEl = document.getElementById("data-dir");
@@ -120,6 +121,8 @@
             document.title = "BeamtimeHero · " + data.beamline;
         }
 
+        renderExamples(data.examples || []);
+
         const configured = !!data.data_configured;
         const dir = data.scan_dir || "";
 
@@ -147,6 +150,30 @@
                     "please ask beamline staff to configure the data directory.";
             }
         }
+    }
+
+    // Clicking an example fills the chat box but does not send, so the
+    // user can adjust it first (scan numbers, element, ...).
+    function renderExamples(examples) {
+        const box = document.getElementById("examples");
+        const list = document.getElementById("examples-list");
+        if (!box || !list) return;
+        list.innerHTML = "";
+        examples.forEach(function (text) {
+            const li = document.createElement("li");
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "example-prompt";
+            btn.textContent = text;
+            btn.addEventListener("click", function () {
+                inputEl.value = text;
+                inputEl.dispatchEvent(new Event("input"));
+                inputEl.focus();
+            });
+            li.appendChild(btn);
+            list.appendChild(li);
+        });
+        box.hidden = examples.length === 0;
     }
 
     async function loadStatus() {
@@ -518,6 +545,11 @@
     sendBtn.addEventListener("click", sendMessage);
     resetBtn.addEventListener("click", resetConversation);
     staffSendBtn.addEventListener("click", sendStaffMessage);
+    // Staff messages are live-only (never in /api/history), so this is just
+    // a local declutter: nothing is lost server-side or in Slack.
+    staffClearBtn.addEventListener("click", function () {
+        staffMessagesEl.innerHTML = "";
+    });
 
     inputEl.addEventListener("keydown", function (e) {
         if (e.key === "Enter" && !e.shiftKey) {

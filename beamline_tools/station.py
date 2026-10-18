@@ -14,6 +14,7 @@ Each station is a module in ``beamline_tools.stations`` exposing:
   REFDOCS             (name, repo-relative path, description) for `ref`
   UPSTREAM_REFDOCS    upstream bundled docs to keep listed (None = all)
   TOOL_CATEGORIES     sidebar grouping (canonical tool names)
+  EXAMPLE_PROMPTS     sidebar "Try asking" prompts (tested against the tools)
 
 Station content (persona prompt, reference docs) lives beside it in
 ``stations/<NAME>/`` and ``.claude/agents/``.

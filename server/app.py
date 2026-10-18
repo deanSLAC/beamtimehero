@@ -346,6 +346,7 @@ async def status():
     return {
         "station": STATION.NAME,
         "beamline": STATION.BEAMLINE,
+        "examples": list(STATION.EXAMPLE_PROMPTS),
         "data_configured": c.SCAN_DIR_CONFIGURED,
         "scan_dir": str(c.BL_SCAN_DIR),
         "logs_configured": c.LOGS_DIR_CONFIGURED,
