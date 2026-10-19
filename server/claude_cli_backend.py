@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from config import (
+    AGENT_CLAUDE_CONFIG_DIR,
     CLAUDE_BIN,
     PROJECT_ROOT,
     active_gateway_key,
@@ -264,6 +265,12 @@ def _run_claude(
 
     env = os.environ.copy()
     env["BEAMTIMEHERO_PLOTS_DIR"] = str(plots_dir)
+    # Own config dir, not ~/.claude (see config.AGENT_CLAUDE_CONFIG_DIR);
+    # --resume finds sessions there. No auto-update from the service: it
+    # would replace the shared install and any pinned CLAUDE_BIN version.
+    AGENT_CLAUDE_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    env["CLAUDE_CONFIG_DIR"] = str(AGENT_CLAUDE_CONFIG_DIR)
+    env["DISABLE_AUTOUPDATER"] = "1"
     gw_env, key_name = _gateway_env()
     env.update(gw_env)
 
@@ -435,7 +442,10 @@ def _run_claude(
         logger.warning("Gateway key %s hit a rate limit; next turn fails over", key_name)
         note_gateway_rate_limited(key_name)
     if rc != 0:
-        snippet = stderr_text.strip()[:500] or "<empty stderr>"
+        # An API error lands in the result event; stderr then holds only
+        # warnings, so prefer the result text.
+        snippet = (result_text if result_is_error else "") or stderr_text
+        snippet = snippet.strip()[:500] or "<empty stderr>"
         raise RuntimeError(f"claude exited with code {rc}: {snippet}")
 
     final_text = result_text or "\n".join(assistant_text_chunks)

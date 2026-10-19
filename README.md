@@ -158,6 +158,7 @@ Tests: `venv/bin/python -m pytest tests/`
 | `<GW>_API_KEY_PRIMARY` | No | Tried first; `<GW>_API_KEY` is the fallback while it is rate-limited |
 | `<GW>_MODEL_ALIAS` | No | Becomes `ANTHROPIC_MODEL` (e.g. `opus`); other `<GW>_*` vars pass through prefix-stripped |
 | `CLAUDE_BIN` | No | Path to the `claude` binary (default: `claude` on PATH) |
+| `BEAMTIMEHERO_CLAUDE_CONFIG_DIR` | No | `CLAUDE_CONFIG_DIR` for the embedded agent (default: `~/.claude-beamtimehero`), kept apart from the service user's own `~/.claude` |
 | `BL_SCAN_DIR` | No | Path to SPEC data root (default: `/data/fifteen`) |
 | `BL_LOGS_DIR` | No | Path to SPEC log files |
 | `SLACK_BOT_TOKEN` | No | Slack bot token (`xoxb-...`) |

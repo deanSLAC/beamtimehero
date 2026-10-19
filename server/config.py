@@ -21,6 +21,14 @@ STATIC_DIR = PROJECT_ROOT / "static"
 # LLM gateway selection
 LLM_GATEWAY = os.getenv("LLM_GATEWAY", "default")
 CLAUDE_BIN = os.getenv("CLAUDE_BIN", "claude")
+# Claude Code config dir for the embedded agent (CLAUDE_CONFIG_DIR of the
+# spawned `claude`). Kept apart from the service user's ~/.claude so the
+# agent's sessions, login state and user-level settings never mix with a
+# developer's interactive `claude` run as the same user in this repo.
+AGENT_CLAUDE_CONFIG_DIR = Path(
+    os.getenv("BEAMTIMEHERO_CLAUDE_CONFIG_DIR")
+    or Path.home() / ".claude-beamtimehero"
+).expanduser()
 
 # Slack
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")

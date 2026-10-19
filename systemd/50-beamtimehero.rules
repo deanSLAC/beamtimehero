@@ -1,0 +1,12 @@
+// polkit: members of group fourone (fourone, dean) may start, stop and restart
+// the beamtimehero service without sudo (systemctl restart beamtimehero).
+// Nothing else.
+// Installed (copied, root-owned) to /etc/polkit-1/rules.d/ by systemd/install.sh.
+polkit.addRule(function (action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") == "beamtimehero.service" &&
+        ["start", "stop", "restart"].indexOf(action.lookup("verb")) >= 0 &&
+        subject.isInGroup("fourone")) {
+        return polkit.Result.YES;
+    }
+});
