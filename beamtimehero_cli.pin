@@ -10,4 +10,8 @@
 # 2026-10-18: 581d773 on feat/list-scans-filters (fast-forward over a9c345e):
 # list-scans --summary / --file-name / --command, so the agent can see what a
 # beamtime holds in one call. Plain listing unchanged.
-581d773d12e470d29cc3bf9e742d63c8118b6965
+#
+# 2026-10-18: 7d694df on feat/list-files-scan-dir (fast-forward over 581d773):
+# list-files reports the absolute scan_dir with its relative paths, so the
+# agent can tell a user where their files are.
+7d694df381e58c02203191a8d3e194c302c17f4f
