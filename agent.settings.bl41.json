@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "_comment": "Runtime allowlist for the BL4-1 BeamtimeHero embedded agent (BTH_STATION=bl41). Loaded by `claude -p --settings agent.settings.bl41.json` in server/claude_cli_backend.py. Read-only: the bl41 `bth` profile carries no writers, the agent reads docs via `ref`, and every file/web/agent tool is denied. NOT auto-loaded by any other Claude Code session in this directory.",
+  "_comment": "Runtime allowlist for the BL4-1 BeamtimeHero embedded agent (BTH_STATION=bl41). Loaded by `claude -p --settings agent.settings.bl41.json` in server/claude_cli_backend.py. Read-only except `bth write-summary` / `bth save-plan` (notes into the user's experiment dir): the bl41 `bth` profile carries no other writers, the agent reads docs via `ref`, and every file/web/agent tool is denied. NOT auto-loaded by any other Claude Code session in this directory.",
   "permissions": {
     "allow": [
       "Bash(./scripts/beamtimehero --help)",

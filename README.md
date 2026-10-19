@@ -33,14 +33,14 @@ One setting, `BTH_STATION` in `.env`, selects which beamline a deployment serves
 | Agent persona | `.claude/agents/beamline-bth.md` | `.claude/agents/beamline-bth-bl41.md` |
 | Runtime allowlist | `agent.settings.json` | `agent.settings.bl41.json` (no `Read` at all) |
 | Reference docs | `stations/bl15/context/` | `stations/bl41/context/` |
-| Tool profile | 42 tools incl. summary/macro writers | 69 read-only tools (autonomous_fourone's chat surface + read-only SPEC state, caget, cscan status) |
+| Tool profile | 42 tools incl. summary/macro writers | 72 tools: read-only (autonomous_fourone's chat surface + read-only SPEC state, caget, cscan status) plus summary/plan writers |
 | SPEC transport | `screen` | `tcp` (SPEC server, localhost:2033) |
 | Scan / log dirs | from `.env` | `/fourone`, `/usr/local/lib/spec.log/logfiles` |
 | Data / run logs | `./data`, `./logs` | `/fourone/beamtimehero/{data,logs}` |
 
 Each station module holds the env defaults (applied before any upstream import; `.env` wins), the `bth` profile, the refdoc list and the sidebar grouping. Leaving `BTH_STATION` unset reproduces the pre-station BL15-2 behaviour exactly. An unknown station name refuses to start.
 
-The BL4-1 profile is read-only by enumeration: no file, macro, DB, Slack or SPEC writes, and none of the tools that count (`get-counts` runs `ct`, which drives the cscan box and shutter). `tests/test_bl41_station.py` fails if a writer or a `mutates` tool reaches it.
+The BL4-1 profile is read-only by enumeration except `write-summary` and `save-plan`, which write notes into the user's experiment directory (`BEAMTIMEHERO_PLANS_DIR`, default `{scan_dir}`; `BEAMTIMEHERO_LOG_DIR` when no `YYYY-MM_*` dir resolves): no macro, DB, Slack or SPEC writes, and none of the tools that count (`get-counts` runs `ct`, which drives the cscan box and shutter). `tests/test_bl41_station.py` fails if any other writer or a `mutates` tool reaches it.
 
 ## Tool System
 
@@ -78,7 +78,7 @@ beamline_tools/       BTH extension layer over the shared beamtimehero_cli packa
   cli.py              Agent-facing CLI: ref + bth trees, parse-time gating
   station.py          BTH_STATION -> station module
   stations/bl15.py    BL15-2: bth profile, refdocs, env defaults, sidebar
-  stations/bl41.py    BL4-1: the same, read-only profile
+  stations/bl41.py    BL4-1: the same, read-only profile + note writers
   config.py           Applies the station's env defaults, re-exports upstream config
 scripts/beamtimehero  Thin shell wrapper around beamline_tools.cli:main
 server/               Python FastAPI backend
@@ -168,6 +168,7 @@ Tests: `venv/bin/python -m pytest tests/`
 | `PORT` / `HOST` | No | Bind address (defaults: `8080` / `127.0.0.1`; `run.sh` uses `8742`) |
 | `BEAMTIMEHERO_DATA_DIR` | No | Data dir for plots + the persisted conversation manifest (station default) |
 | `BEAMTIMEHERO_LOG_DIR` / `BEAMTIMEHERO_SUGGESTIONS_DIR` | No | Per-run server logs / user suggestions (station default) |
+| `BEAMTIMEHERO_PLANS_DIR` | No | `save-plan` target; `{scan_dir}` expands to the active experiment dir (station default: `logs/plans` at BL15-2, `{scan_dir}` at BL4-1) |
 | `BEAMTIMEHERO_TURN_TIMEOUT_SECONDS` | No | Hard wall clock per `claude -p` turn (default: `600`) |
 | `BEAMTIMEHERO_FULL_CLI` | No | Operator-only: `1` exposes the full upstream CLI catalog at a terminal |
 | `MLFLOW_ENABLED` / `MLFLOW_TRACKING_URI` / `MLFLOW_TRACKING_TOKEN` | No | Best-effort MLflow tracing (disabled by default) |

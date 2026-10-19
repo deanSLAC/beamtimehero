@@ -30,6 +30,8 @@ ENV_DEFAULTS: dict[str, str] = {
     "BEAMTIMEHERO_DATA_DIR": str(_ROOT / "data"),
     "BEAMTIMEHERO_LOG_DIR": str(_ROOT / "logs"),
     "BEAMTIMEHERO_SUGGESTIONS_DIR": str(_ROOT / "user_suggestions"),
+    # save-plan target (upstream documents ./logs/plans/)
+    "BEAMTIMEHERO_PLANS_DIR": str(_ROOT / "logs" / "plans"),
 }
 
 # (name, path relative to repo, description) for `beamtimehero ref`.

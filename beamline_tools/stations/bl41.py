@@ -6,14 +6,17 @@ BL04:State, 67 s count cap, xrs/tender trees hidden).
 
 The profile follows autonomous_fourone's read-only chat surface
 (``beamline_tools/agent_roles.py`` ``_CHAT_TOOLS``), plus read-only SPEC
-state queries. Strictly read-only by enumeration: no file, macro, DB,
-Slack or SPEC writes. Left out on purpose:
+state queries. Read-only by enumeration except two note writers:
+write_summary (.txt) and save_plan (.md), both into the user's experiment
+directory (write_summary names are timestamped; save_plan refuses an
+existing file unless passed overwrite). No macro, DB, Slack or SPEC
+writes. Left out on purpose:
 
-  write_summary, write_macro, save_plan, record_energy_calibration,
+  write_macro, record_energy_calibration,
   record_provenance, export_results_bundle   writers
   get_counts, get_counter                    run `ct` (cscan box + shutter)
   evaluate_spec_macro                        executes SPEC code (sandbox)
-  get_anchor, get_beam_size, get_element     BL15-2 macros
+  get_beam_size, get_element                 BL15-2 macros
   capture_sample_image                       no BL4-1 camera yet
   research/ask_question                      off-host research agent
   cherfd_wait_for_scan                       blocks a chat turn until a sweep ends
@@ -49,6 +52,10 @@ ENV_DEFAULTS: dict[str, str] = {
     "BEAMTIMEHERO_DATA_DIR": f"{_RUN_ROOT}/data",
     "BEAMTIMEHERO_LOG_DIR": f"{_RUN_ROOT}/logs",
     "BEAMTIMEHERO_SUGGESTIONS_DIR": f"{_RUN_ROOT}/user_suggestions",
+    # save-plan writes into the user's experiment dir, beside write-summary's
+    # summaries ({scan_dir} = the active /fourone/YYYY-MM_<Name>; with
+    # none, notes go to BEAMTIMEHERO_LOG_DIR, see beamline_tools/config.py)
+    "BEAMTIMEHERO_PLANS_DIR": "{scan_dir}",
     # cherfd-read tools talk to the live cscan server (GET only); upstream
     # mocks it unless CHERFD_MOCK is exactly "0"
     "CHERFD_MOCK": "0",
@@ -68,7 +75,7 @@ ENV_DEFAULTS: dict[str, str] = {
 
 PROFILE = {
     "name": "bth",
-    "description": "BeamtimeHero BL4-1 web-chat agent surface (read-only).",
+    "description": "BeamtimeHero BL4-1 web-chat agent surface (read-only, plus summary/plan notes).",
     "aliases": {
         # ---- Scan data ---------------------------------------------------
         "list-scans":                ("spec-file", "list_scans"),
@@ -133,6 +140,10 @@ PROFILE = {
         "get-motor-config":          ("tool", "get_motor_config"),
         "get-counter-config":        ("tool", "get_counter_config"),
 
+        # ---- Notes into the user's experiment dir (the only writers) ----
+        "write-summary":             ("tool", "write_summary"),
+        "save-plan":                 ("tool", "save_plan"),
+
         # ---- Station services + EPICS (HTTP GET / caget only) -----------
         "caget":                     ("tool", "caget"),
         "get-sample-environment":    ("tool", "get_sample_environment"),
@@ -148,6 +159,9 @@ PROFILE = {
         "get-scan-number":           ("spec-read", "get_scan_number"),
         "get-current-datafile":      ("spec-read", "get_current_datafile"),
         "get-plotselected-counter":  ("spec-read", "get_plotselected_counter"),
+        # tracking.mac get_anchor: prints the table anchor, warns on a
+        # crystal-set change (no motion)
+        "get-anchor":                ("spec-read", "get_anchor"),
 
         # ---- Continuous scans: cscan / cherfd server (GET only) ---------
         "cherfd-get-status":         ("cherfd-read", "cherfd_get_status"),
@@ -279,13 +293,14 @@ TOOL_CATEGORIES = [
             "get_beam_status", "get_check_beam", "get_crystal_set",
             "read_all_positions", "read_motor_position",
             "get_current_datafile", "get_scan_number", "get_plotselected_counter",
+            "get_anchor",
             "caget", "get_sample_environment", "get_ge_detector_status",
             "get_motor_diagnostics", "get_motor_config", "get_counter_config",
         ],
     ),
     (
         "Files",
-        ["list_files", "read_file", "recent_actions"],
+        ["list_files", "read_file", "write_summary", "save_plan", "recent_actions"],
     ),
 ]
 

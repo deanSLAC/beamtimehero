@@ -1,4 +1,4 @@
-"""BL4-1 station surface: every alias resolves, nothing writes, docs exist.
+"""BL4-1 station surface: every alias resolves, only the note writers write, docs exist.
 
 The station is chosen at import (BTH_STATION), so the check runs in a
 subprocess with the variable set rather than reloading modules here.
@@ -13,8 +13,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # Canonical tools that write files, the DB, Slack or SPEC, or that act on
 # hardware despite reading (`ct`). None may reach the BL4-1 chat agent.
+# write_summary and save_plan are allowed: notes into the user's dir.
 FORBIDDEN = {
-    "write_summary", "write_macro", "save_plan", "record_energy_calibration",
+    "write_macro", "record_energy_calibration",
     "record_provenance", "export_results_bundle", "evaluate_spec_macro",
     "get_counts", "get_counter", "capture_sample_image",
     "cherfd_wait_for_scan",
