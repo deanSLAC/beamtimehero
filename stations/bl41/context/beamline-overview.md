@@ -116,6 +116,6 @@ slits, table or pitch is alignment; a short `dscan mono` around a foil edge is c
 - Continuous scans (cscan app) save per sweep pickles in the chosen directory under `/fourone`:
   `scan_results_<fileroot>_<sweep>_<fwd|rev>_<timestamp>_dataframe.pkl`. A stopped scan's partial
   frames go under `/fourone/partial/`. Optional SPEC export (switch in the cscan Data path card,
-  off by default): `/fourone/specformat/<directory>/<pickle name>.spec`, readable by PyMca.
+  off by default): `/fourone/<directory>/specformat_cscans/<pickle name>.spec`, readable by PyMca.
 - SPEC session logs (everything typed and printed):
   `/usr/local/lib/spec.log/logfiles/log_<USER>_<MM-DD-YYYY>`.

@@ -122,5 +122,5 @@ E0 + 34 eV). Longer `ksec2` buys signal at high k where chi(k) decays.
 - Step scans: SPEC files, one `#S` block per scan, in the session data
   directory (`/fourone/YYYY-MM_NAME`, copied hourly to `/data/fourone/`).
 - Continuous sweeps: per-sweep result files under the cscan data root
-  (optionally a SPEC file per sweep under `specformat/`).
+  (optionally a SPEC file per sweep in `<directory>/specformat_cscans/`).
 - Use the **`absev`** column as the energy axis.
