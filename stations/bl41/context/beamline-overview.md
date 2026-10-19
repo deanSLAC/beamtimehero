@@ -99,7 +99,8 @@ slits, table or pitch is alignment; a short `dscan mono` around a foil edge is c
 - SPEAR current must be above **200 mA** and the beamline state (`BL04:State`) **Open**.
 - `check_beam_on` makes SPEC pause at the start of each scan while beam is down (checks every
   10 s, resumes automatically). It is off when SPEC starts; `check_beam_off` disables it.
-- A fast shutter (Galil output) can open only during counting (`fson`) to limit dose.
+- The shutter (Galil output) is held open for counting with `fsopen; fsoff`. There is no fast
+  shutter, so SPEC refuses `fson` (auto open per count).
 - Wall-screen Beam monitor app (port 5014) shows beamline state, SPEAR current, I0/I1/I2/pips
   volts and mono energy live.
 

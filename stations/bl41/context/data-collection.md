@@ -7,7 +7,7 @@
 - The beamline is configured and calibrated for the edge
   (`changing-energy`, `energy-calibration`) and the sample is aligned, with
   known Sx/Sz bounds (`sample-alignment`).
-- **Shutter in auto mode:** `fson` (opens only while counting - limits dose).
+- **Shutter held open:** `fsopen; fsoff`. BL4-1 has no fast shutter; SPEC refuses `fson`.
 - **Pause on beam loss:** `check_beam_on` (step scans pause at scan start if
   SPEAR < 200 mA or BL4 is closed, and resume when the beam is back).
 - **One data file per sample:** `newfile <sample_name>` (spaces and `/` as

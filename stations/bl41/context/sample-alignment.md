@@ -13,8 +13,8 @@ move to each sample and to fresh spots inside known bounds.
   (jjvtra/jjhtra, always 0) and upstream optics are staff-set. Ask staff
   before changing slit gaps.
 - Stage limits: **Sx 20 to 60.5 mm, Sz 0 to 72 mm.** Keep scans inside them.
-- **Keep dose low:** short count times (0.2-0.3 s) and the shutter in auto
-  mode (`fson`). Alignment should not use up the sample's damage budget.
+- **Keep dose low:** short count times (0.2-0.3 s). Alignment should not use
+  up the sample's damage budget.
 - The beamline must already be configured for this edge (see
   `changing-energy`). Alignment does not change the table or pitch.
 
@@ -41,7 +41,7 @@ ask staff if unsure).
    Show gains with `wsrs`; change one step at a time, e.g.
    `set_i1_gain("100 nA/V")`. After any gain change, re-measure the darks
    (see `data-collection`).
-4. Shutter in auto mode (opens only while counting): `fson`
+4. Hold the shutter open: `fsopen; fsoff` (no fast shutter here; SPEC refuses `fson`)
 5. Select the plotted counter, which `cen`/`peak` act on:
    `plotselect I1` (transmission) or `plotselect xsum` / `plotselect pips`.
 6. Slits for alignment are normally 1 x 1 mm (jjvgap 1, jjhgap 1) - staff set

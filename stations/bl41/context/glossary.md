@@ -32,8 +32,8 @@ from SPEAR pass the monochromator, the JJ slits, the ion chambers and the sample
 - **i0gain, i0offs ...** - SPEC columns recording each amp's gain (A/V) and offset
   (A) at every point.
 - **plotselect** - which counter SPEC plots live (and uses for `cen`/`peak`).
-- **Shutter, fson / fsclose** - fast shutter before the sample; `fson` = open only
-  while counting (limits dose); `fsclose` closes it.
+- **Shutter, fsopen / fsclose** - the shutter before the sample; held open with
+  `fsopen; fsoff`, closed with `fsclose`. No fast shutter here: SPEC refuses `fson`.
 
 ## Energy and monochromator
 

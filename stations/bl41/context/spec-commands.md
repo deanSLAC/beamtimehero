@@ -100,10 +100,10 @@ Energy calibration routine (with staff): park the mono at the tabulated foil edg
 | Command | Meaning |
 |---|---|
 | `fsopen` / `fsclose` | Open / close the fast shutter |
-| `fson [delay]` | Auto mode: open before every count, close after each point, after `ct` and on ^C (default settle 0.3 s) |
 | `fsoff` | Leave auto mode (shutter state unchanged) |
+| `fson` | Refused at BL4-1 (no fast shutter) |
 
-Use `fson` whenever a dose-sensitive sample is in the beam. Each point costs about 2 x delay.
+Hold the shutter open for counting with `fsopen; fsoff`.
 
 ## Beam check
 

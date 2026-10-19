@@ -49,7 +49,7 @@
 Each sweep is saved as `scan_results_<fileroot>_<n>_<fwd|rev>_<time>_dataframe.pkl`.
 Statistics come from more sweeps (a sweep cannot slow its counting at high k).
 
-**Step scans (SPEC)** - `gscan mono ...` for XANES, `kscan ...` for EXAFS; `fson` to limit dose;
+**Step scans (SPEC)** - `gscan mono ...` for XANES, `kscan ...` for EXAFS; shutter held open (`fsopen; fsoff`);
 max 67 s per point.
 
 If the autonomous app (port 5005) or XAS++ / Experimenter Console is in use for the beamtime,
