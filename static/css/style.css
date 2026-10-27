@@ -134,12 +134,14 @@ body {
     color: var(--ssrl-red);
 }
 
+.intro-model,
 .intro-examples {
     margin-top: 10px;
     padding-top: 10px;
     border-top: 1px solid var(--border-color);
 }
 
+.intro-model-title,
 .intro-examples-title {
     font-weight: 600;
     color: var(--text-muted);
