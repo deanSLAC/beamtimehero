@@ -22,4 +22,4 @@ ln -sf "$SRC" "/etc/systemd/system/$UNIT"
 install -m 644 -o root -g root "$DIR/$RULE" "/etc/polkit-1/rules.d/$RULE"
 systemctl daemon-reload
 systemctl enable --now "$UNIT"
-echo "installed, enabled and started $UNIT: http://127.0.0.1:8742"
+echo "installed, enabled and started $UNIT: http://127.0.0.1:8742 and http://192.168.41.6:8742"

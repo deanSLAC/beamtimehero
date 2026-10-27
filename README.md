@@ -138,13 +138,13 @@ Edit `.env` and set:
 ### Run
 
 ```bash
-./run.sh                 # http://localhost:8742/ (localhost only)
+./run.sh                 # http://localhost:8742/ (localhost only; at BL4-1 also http://192.168.41.6:8742/)
 # or
 source venv/bin/activate
 python server/app.py     # http://localhost:8080/
 ```
 
-The server binds `127.0.0.1` by default -- the API is unauthenticated, so set `HOST` deliberately if you need to expose it.
+The server binds `127.0.0.1` by default -- the API is unauthenticated, so set `HOST` deliberately if you need to expose it. At BL4-1 (`BTH_STATION=bl41` in `.env`) `run.sh` defaults to `127.0.0.1,192.168.41.6`: bl41lx1 and the beamline subnet 192.168.41.0/24.
 
 Tests: `venv/bin/python -m pytest tests/`
 
@@ -166,7 +166,7 @@ Tests: `venv/bin/python -m pytest tests/`
 | `SLACK_LLM_CHANNEL_ID` | No | Slack channel for user-LLM conversation log |
 | `SLACK_USERS_CHANNEL_ID` | No | Slack channel for staff-user communication |
 | `BASE_PATH` | No | URL base path (default: empty, i.e. served at `/`) |
-| `PORT` / `HOST` | No | Bind address (defaults: `8080` / `127.0.0.1`; `run.sh` uses `8742`) |
+| `PORT` / `HOST` | No | Bind port / addresses (defaults: `8080` / `127.0.0.1`; `run.sh` uses `8742`, and HOST `127.0.0.1,192.168.41.6` at bl41; comma-separated) |
 | `BEAMTIMEHERO_DATA_DIR` | No | Data dir for plots + the persisted conversation manifest (station default) |
 | `BEAMTIMEHERO_LOG_DIR` / `BEAMTIMEHERO_SUGGESTIONS_DIR` | No | Per-run server logs / user suggestions (station default) |
 | `BEAMTIMEHERO_PLANS_DIR` | No | `save-plan` target; `{scan_dir}` expands to the active experiment dir (station default: `logs/plans` at BL15-2, `{scan_dir}` at BL4-1) |
@@ -186,7 +186,7 @@ python3 -m venv venv
 HTTPS_PROXY=http://134.79.44.164:3128 venv/bin/pip install -r requirements.txt
 cp .env.bl41.example .env && chmod 600 .env     # as fourone; fill in the SLAC keys
 mkdir -p /fourone/beamtimehero && chmod 2775 /fourone/beamtimehero
-./run.sh                                         # foreground check: http://127.0.0.1:8742/
+./run.sh                                         # foreground check: http://127.0.0.1:8742/ (+ http://192.168.41.6:8742/)
 sudo systemd/install.sh                          # then: service at boot, User=fourone
 ```
 

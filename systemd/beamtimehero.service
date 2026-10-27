@@ -1,4 +1,4 @@
-# BeamtimeHero (http://127.0.0.1:8742), started at boot. The station
+# BeamtimeHero (http://127.0.0.1:8742 and http://192.168.41.6:8742), started at boot. The station
 # (BTH_STATION) and every other setting come from the repo's .env.
 # Install (root): systemd/install.sh   - symlinks this file and enables it.
 [Unit]
